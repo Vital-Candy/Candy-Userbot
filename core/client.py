@@ -1,80 +1,105 @@
 # core/client.py
-import json
-import os
-import secrets
-import sys
+"""
+Клиент Telethon.
+
+Этап 1:
+  - _ClientProxy остаётся — один аккаунт работает как прежде.
+  - init_client() теперь опционально принимает AccountContext
+    для будущей интеграции.
+  - get_raw_client() / get_context() — для модулей которые
+    хотят получить текущий контекст.
+
+Этап 2+:
+  - _current_client → dict[account_id, TelegramClient]
+  - _ClientProxy станет мультиплексором (не сейчас).
+"""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
 from telethon import TelegramClient
-from utils.paths import CONFIG_PATH, PROJECT_ROOT
+
+logger = logging.getLogger("client")
+
+_current_client: TelegramClient | None = None
+_current_context = None  # AccountContext | None — избегаем циклического импорта
 
 
-class UserBot:
-    def __init__(self):
-        self.client = None
-        self._load_config()
+# ── Прокси ───────────────────────────────────────────────────────────
 
-    def _load_config(self):
-        need_save = False
+class _ClientProxy:
+    """
+    Прокси к активному TelegramClient.
+    Все модули импортируют `client` — этот объект.
+    При смене аккаунта (init_client) proxy автоматически
+    указывает на новый клиент.
+    """
 
-        if not os.path.exists(CONFIG_PATH):
-            config = {
-                "api_id": None,
-                "api_hash": None,
-                "session_name": "userbot_session",
-                "update_token": secrets.token_urlsafe(24),
-            }
-            need_save = True
-        else:
-            try:
-                with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                print(f"❌ config.json повреждён. Удалите его или исправьте вручную ({CONFIG_PATH}).")
-                sys.exit(1)
-            # Уникальный токен на каждую установку (никогда не общий для всех)
-            if not config.get("update_token"):
-                config["update_token"] = secrets.token_urlsafe(24)
-                need_save = True
+    def __getattr__(self, name: str):
+        if _current_client is None:
+            raise RuntimeError(
+                "TelegramClient не инициализирован. "
+                "Вызови init_client() перед использованием."
+            )
+        return getattr(_current_client, name)
 
-        if not config.get("api_id") or not config.get("api_hash"):
-            print("\n=== Первый запуск: введите данные API ===")
-            print("Получить api_id и api_hash можно на https://my.telegram.org/apps\n")
-            try:
-                api_id = int(input("api_id: ").strip())
-                api_hash = input("api_hash: ").strip()
-            except ValueError:
-                print("❌ api_id должен быть числом.")
-                sys.exit(1)
-            except (KeyboardInterrupt, EOFError):
-                print("\nОтмена.")
-                sys.exit(0)
-            if not api_hash:
-                print("❌ api_hash не может быть пустым.")
-                sys.exit(1)
-            config["api_id"] = api_id
-            config["api_hash"] = api_hash
-            need_save = True
+    def __call__(self, *args, **kwargs):
+        """Поддержка await client(SomeRequest())."""
+        if _current_client is None:
+            raise RuntimeError("TelegramClient не инициализирован.")
+        return _current_client(*args, **kwargs)
 
-        if need_save:
-            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
-            print("✅ config.json обновлён.\n")
+    def __bool__(self) -> bool:
+        return _current_client is not None and _current_client.is_connected()
 
-        if not config.get("api_id") or not config.get("api_hash"):
-            raise ValueError("api_id и api_hash должны быть указаны в config.json")
-
-        self.api_id = config["api_id"]
-        self.api_hash = config["api_hash"]
-        self.session_name = os.path.join(PROJECT_ROOT, config.get("session_name", "userbot_session"))
-
-        self.client = TelegramClient(
-            self.session_name,
-            self.api_id,
-            self.api_hash
-        )
-
-    def get_client(self):
-        return self.client
+    def __repr__(self) -> str:
+        return f"<_ClientProxy → {_current_client!r}>"
 
 
-userbot_instance = UserBot()
-client = userbot_instance.get_client()
+# Единственный экземпляр — импортируется всеми модулями
+client: _ClientProxy = _ClientProxy()
+
+
+# ── Инициализация ─────────────────────────────────────────────────────
+
+def init_client(profile: dict, ctx=None) -> TelegramClient:
+    """
+    Создаёт TelegramClient для указанного профиля.
+    
+    ctx (AccountContext | None):
+        Если передан — сохраняется в _current_context.
+        Модули могут получить его через get_context().
+        В Этапе 1 используется опционально.
+    """
+    global _current_client, _current_context
+
+    from utils.paths import ACCOUNTS_DIR
+    identifier   = profile.get("username") or profile.get("phone") or str(profile.get("id", "unknown"))
+    session_path = ACCOUNTS_DIR / identifier / "session"
+
+    _current_client = TelegramClient(
+        str(session_path),
+        profile["api_id"],
+        profile["api_hash"],
+    )
+
+    if ctx is not None:
+        _current_context = ctx
+        ctx.client = _current_client
+
+    logger.info(f"Client ready: {profile.get('username') or profile.get('phone') or profile.get('id')}")
+    return _current_client
+
+
+def get_raw_client() -> TelegramClient | None:
+    """Возвращает сырой TelegramClient (для внутреннего использования)."""
+    return _current_client
+
+
+def get_context():
+    """
+    Возвращает текущий AccountContext (или None если не установлен).
+    Используется модулями которым нужен изолированный state.
+    """
+    return _current_context
