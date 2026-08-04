@@ -1,15 +1,15 @@
 <div align="center">
 
-# 🍬 Candy-Userbot
+<img src="assets/banner.txt" alt="" />
 
-**Модульный Telegram userbot на Telethon**
+# 🍬 Candy Userbot
 
-Горячая перезагрузка модулей · Обновление через `git pull` · Кроссплатформенность (Linux / macOS / Windows / Termux)
+**Модульный Telegram userbot на Python + Telethon**
 
-[![Python](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![Telethon](https://img.shields.io/badge/Telethon-1.36%2B-2CA5E0?logo=telegram&logoColor=white)](https://docs.telethon.dev/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
+[![Telethon](https://img.shields.io/badge/Telethon-1.36%2B-2CA5E0?logo=telegram&logoColor=white)](https://docs.telethon.dev)
 [![License](https://img.shields.io/badge/License-Attribution--Required-orange)](./LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20%7C%20Termux-lightgrey)](#)
+[![Platform](https://img.shields.io/badge/Platform-Termux%20%7C%20Linux%20%7C%20macOS-lightgrey)](#)
 
 </div>
 
@@ -29,57 +29,149 @@ cd Candy-Userbot
 bash install.sh
 ```
 
-Скрипт сам поставит зависимости (на Termux и Debian/Ubuntu — автоматически; на других системах нужны Python 3.9+, pip и git) и запустит бота.
-При первом запуске бот попросит `api_id` и `api_hash` — получить их можно на [my.telegram.org/apps](https://my.telegram.org/apps).
+> Скрипт автоматически установит зависимости (Termux и Debian/Ubuntu).  
+> При первом запуске добавь аккаунт через меню, введя `api_id` и `api_hash` с [my.telegram.org/apps](https://my.telegram.org/apps).
 
-> 🔒 Никакие ключи, токены и сессии в репозитории не хранятся. `config.json` и `*.session` создаются локально при первом запуске и исключены через `.gitignore`.
+---
 
-## 🚀 Запуск в дальнейшем
+## 🚀 Запуск
 
 ```bash
 cd Candy-Userbot
 python3 main.py
 ```
 
-## 🧩 Команды ядра
+При запуске откроется **консольное меню**:
+
+```
+  АККАУНТЫ
+
+  [1]  Ivan Petrov  @ivanpetrov
+  [2]  Work Account @workaccount
+
+  A  — Добавить аккаунт
+  B  — Восстановить из бэкапа
+  0  — Выход
+```
+
+Выбери цифру → бот запустится для этого аккаунта.  
+`.stop` или `Ctrl+C` → вернуться в меню и сменить аккаунт.
+
+---
+
+## 👥 Мультиаккаунт
+
+Candy Userbot поддерживает несколько аккаунтов одновременно — каждый хранится отдельно в `accounts/<username>/`. Сессии никогда не попадают в git.
+
+| Действие | Как |
+|---|---|
+| Добавить аккаунт | `A` в меню → введи API данные |
+| Переключить аккаунт | `.stop` → выбери другой номер |
+| Создать бэкап | `.backup` в чате → файл на `/sdcard` |
+| Восстановить на другом устройстве | `B` в меню → укажи путь к zip |
+
+---
+
+## 📋 Команды
+
+### Система (встроены в ядро)
 
 | Команда | Описание |
 |---|---|
-| `.help [команда]` | Список команд / справка по команде |
-| `.ping` | Задержка |
-| `.alive` | Статус бота |
-| `.reload` | Горячая перезагрузка всех модулей |
-| `.restart` | Полный перезапуск процесса |
-| `.stop` | Остановка бота |
-| `.clear` | Очистка кеша, `__pycache__` и логов |
-| `.update` | Обновление из GitHub (`git pull`) и перезапуск |
+| `.help [команда]` | Список всех команд / справка |
+| `.ping` | Задержка бота |
+| `.alive` | Статус и аптайм |
+| `.reload` | Горячая перезагрузка модулей |
+| `.restart` | Перезапустить процесс |
+| `.stop` | Остановить → вернуться в меню |
+| `.clear` | Очистить кеш и логи |
+| `.backup` | Бэкап аккаунта на `/sdcard` |
+| `.update` | Обновить из GitHub (`git pull`) |
 
-Остальные команды — по модулям в `modules/` (`.download`, `.qr`, `.tag`, `.timer`, `.purge`, `.spam`, `.user`, `.time`, `.roast`/`.praise`). Полный список и синтаксис — через `.help`.
+### Модули
+
+| Команда | Описание |
+|---|---|
+| `.save` | Сохранить исчезающее фото / видео / кружочек |
+| `.user [@username]` | Информация о пользователе |
+| `.purge <N> [all]` | Удалить N сообщений |
+| `.spam <N> <текст>` | Отправить сообщение N раз |
+| `.tag all / random N` | Упомянуть участников группы |
+| `.time on [1-5]` | Живые часы в имени (5 стилей) |
+| `.time off` | Выключить часы, восстановить имя |
+| `.timer 10 / 1.30 / 2.00.00` | Таймер с уведомлением |
+
+---
 
 ## 📁 Структура проекта
 
 ```
-core/       — клиент, диспетчер команд, загрузчик модулей
-modules/    — функциональные модули (каждый: init()/shutdown())
-utils/      — общие пути, логгер, вспомогательные функции
-assets/     — баннер, логотип для .alive
+Candy-Userbot/
+├── core/
+│   ├── accounts.py   — мультиаккаунт: добавление, бэкап, восстановление
+│   ├── client.py     — прокси-клиент (смена аккаунта без перезапуска)
+│   ├── dispatcher.py — встроенные команды, реестр для .help
+│   └── loader.py     — загрузка / горячая перезагрузка модулей
+├── modules/          — подключаемые модули (init / shutdown)
+├── utils/            — пути, логгер, вспомогательные функции
+├── assets/           — баннер, логотип для .alive
+├── accounts/         — сессии аккаунтов (в .gitignore)
+├── main.py           — точка входа, консольное меню
+├── config.py         — версия, автор
+├── install.sh        — установка одной командой
+└── requirements.txt
 ```
 
-## 🔄 Обновление
+---
 
-`.update` выполняет `git fetch` + `git reset --hard @{u}` в папке бота и перезапускает процесс. Работает только если бот установлен через `git clone`. `config.json`, файлы сессии и кеш в `.gitignore` — обновление их не затронет.
+## 🔧 Разработка модулей
 
-## 🛠 Разработка модулей
+Модуль — это `.py` файл в `modules/`. Минимальный шаблон:
 
-Модуль — файл в `modules/`. Обязателен `def init()`, желателен `def shutdown()` (или `async def shutdown()`), который снимает зарегистрированные обработчики через `client.remove_event_handler(...)`. Без этого при `.reload` обработчики будут дублироваться.
+```python
+from telethon import events
+from core.client import client
+from core.dispatcher import register_command
 
-## 📜 Лицензия и авторство
+_registered_handlers = []
 
-Проект распространяется по [собственной лицензии с обязательным указанием авторства](./LICENSE) — использовать, форкать и изменять код можно свободно, но **любая публичная копия или производная работа обязана указывать автора и ссылку на оригинал**:
+def init():
+    global _registered_handlers
+    for h in _registered_handlers:
+        client.remove_event_handler(h)
+    _registered_handlers = []
 
-> Автор: **Abdurahmon** ([@Vital-Candy](https://github.com/Vital-Candy)) · Оригинал: https://github.com/Vital-Candy/Candy-Userbot
+    register_command("mycommand", "Описание", ".mycommand", category="инструменты")
+    h = client.add_event_handler(my_handler,
+        events.NewMessage(outgoing=True, pattern=r"^\.mycommand$"))
+    _registered_handlers.append(h)
 
-Публикация форка без указания авторства нарушает условия лицензии.
+def shutdown():
+    for h in _registered_handlers:
+        client.remove_event_handler(h)
+    _registered_handlers.clear()
+
+async def my_handler(event):
+    await event.edit("✅ Работает!")
+```
+
+Кинь файл в `modules/` → `.reload` подхватит без перезапуска.
+
+---
+
+## 🔒 Безопасность
+
+- `accounts/`, `*.session`, `config.json` в `.gitignore` — ключи никогда не попадут в репозиторий
+- Бэкапы создаются локально на устройстве, не передаются никуда
+
+---
+
+## 📜 Лицензия
+
+Распространяется по [лицензии с обязательным указанием авторства](./LICENSE).  
+Использовать, форкать и изменять — свободно, но любая публичная копия обязана указывать:
+
+> Автор: [@Vital-Candy](https://github.com/Vital-Candy) · Оригинал: https://github.com/Vital-Candy/Candy-Userbot
 
 ---
 
