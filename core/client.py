@@ -1,51 +1,34 @@
 # core/client.py
 """
-Клиент Telethon.
+Прокси к активному TelegramClient.
 
-Этап 1:
-  - _ClientProxy остаётся — один аккаунт работает как прежде.
-  - init_client() теперь опционально принимает AccountContext
-    для будущей интеграции.
-  - get_raw_client() / get_context() — для модулей которые
-    хотят получить текущий контекст.
-
-Этап 2+:
-  - _current_client → dict[account_id, TelegramClient]
-  - _ClientProxy станет мультиплексором (не сейчас).
+Этап 2:
+  - _set_current_client() вызывается из account_runner.activate_account()
+    при смене активного аккаунта.
+  - get_context() возвращает AccountContext активного аккаунта.
+  - Модули продолжают использовать `from core.client import client`.
 """
 from __future__ import annotations
-
 import logging
-from pathlib import Path
-
 from telethon import TelegramClient
 
 logger = logging.getLogger("client")
 
 _current_client: TelegramClient | None = None
-_current_context = None  # AccountContext | None — избегаем циклического импорта
 
-
-# ── Прокси ───────────────────────────────────────────────────────────
 
 class _ClientProxy:
     """
-    Прокси к активному TelegramClient.
-    Все модули импортируют `client` — этот объект.
-    При смене аккаунта (init_client) proxy автоматически
-    указывает на новый клиент.
+    Прокси к _current_client.
+    При смене активного аккаунта _set_current_client() обновляет _current_client,
+    и прокси автоматически делегирует к новому клиенту.
     """
-
     def __getattr__(self, name: str):
         if _current_client is None:
-            raise RuntimeError(
-                "TelegramClient не инициализирован. "
-                "Вызови init_client() перед использованием."
-            )
+            raise RuntimeError("TelegramClient не инициализирован. Вызови activate_account().")
         return getattr(_current_client, name)
 
     def __call__(self, *args, **kwargs):
-        """Поддержка await client(SomeRequest())."""
         if _current_client is None:
             raise RuntimeError("TelegramClient не инициализирован.")
         return _current_client(*args, **kwargs)
@@ -61,45 +44,37 @@ class _ClientProxy:
 client: _ClientProxy = _ClientProxy()
 
 
-# ── Инициализация ─────────────────────────────────────────────────────
-
-def init_client(profile: dict, ctx=None) -> TelegramClient:
-    """
-    Создаёт TelegramClient для указанного профиля.
-    
-    ctx (AccountContext | None):
-        Если передан — сохраняется в _current_context.
-        Модули могут получить его через get_context().
-        В Этапе 1 используется опционально.
-    """
-    global _current_client, _current_context
-
-    from utils.paths import ACCOUNTS_DIR
-    identifier   = profile.get("username") or profile.get("phone") or str(profile.get("id", "unknown"))
-    session_path = ACCOUNTS_DIR / identifier / "session"
-
-    _current_client = TelegramClient(
-        str(session_path),
-        profile["api_id"],
-        profile["api_hash"],
-    )
-
-    if ctx is not None:
-        _current_context = ctx
-        ctx.client = _current_client
-
-    logger.info(f"Client ready: {profile.get('username') or profile.get('phone') or profile.get('id')}")
-    return _current_client
+def _set_current_client(raw: TelegramClient | None) -> None:
+    """Обновляет активный клиент. Вызывается только из account_runner."""
+    global _current_client
+    _current_client = raw
 
 
 def get_raw_client() -> TelegramClient | None:
-    """Возвращает сырой TelegramClient (для внутреннего использования)."""
     return _current_client
 
 
 def get_context():
+    """Возвращает AccountContext активного аккаунта."""
+    from core.account_manager import account_manager
+    return account_manager.active
+
+
+# Обратная совместимость: старый код мог использовать init_client()
+def init_client(profile: dict, ctx=None) -> TelegramClient:
     """
-    Возвращает текущий AccountContext (или None если не установлен).
-    Используется модулями которым нужен изолированный state.
+    Создаёт TelegramClient для профиля.
+    Используй account_runner.connect_account() для нового кода.
     """
-    return _current_context
+    from utils.paths import ACCOUNTS_DIR
+    identifier   = profile.get("username") or profile.get("phone") or str(profile.get("id", "unknown"))
+    session_path = ACCOUNTS_DIR / identifier / "session"
+
+    raw = TelegramClient(str(session_path), profile["api_id"], profile["api_hash"])
+    _set_current_client(raw)
+
+    if ctx is not None:
+        ctx.client = raw
+
+    logger.info(f"init_client: {profile.get('username') or profile.get('id')}")
+    return raw

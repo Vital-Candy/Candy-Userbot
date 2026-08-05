@@ -1,87 +1,107 @@
 # core/loader.py
-import os
-import sys
-import importlib
-import asyncio
-import logging
+"""
+Загрузчик модулей.
+
+Этап 2: load_modules(raw_client, ctx) — принимает явный клиент и контекст.
+Модули вызывают init() который регистрирует handlers через proxy `client`.
+Shutdown вызывается через shutdown_modules(ctx).
+"""
+from __future__ import annotations
+import asyncio, importlib, logging, sys
+from pathlib import Path
 from config import MODULES_DIR
 from utils.paths import PROJECT_ROOT
 
-MODULES_PATH = os.path.join(PROJECT_ROOT, MODULES_DIR)
-
+MODULES_PATH = PROJECT_ROOT / MODULES_DIR
 logger = logging.getLogger("loader")
 
-class ModuleLoader:
-    def __init__(self):
-        self.loaded_modules = []
+_loaded_names: list[str] = []   # имена последней загрузки
 
-    def load_modules(self):
-        loaded = []
-        if not os.path.exists(MODULES_PATH):
-            os.makedirs(MODULES_PATH)
-        for filename in sorted(os.listdir(MODULES_PATH)):
-            if filename.endswith(".py") and not filename.startswith("_"):
-                modname = filename[:-3]
-                modpath = os.path.join(MODULES_PATH, filename)
-                if not self._is_safe_module(modpath):
-                    continue
-                try:
-                    module = importlib.import_module(f"{MODULES_DIR}.{modname}")
-                    if not hasattr(module, "init"):
-                        logger.warning(f"Модуль {modname} не имеет init(), пропущен")
-                        continue
-                    module.init()
-                    loaded.append(modname)
-                    logger.info(f"Модуль {modname} загружен")
-                except Exception as e:
-                    logger.error(f"Ошибка загрузки модуля {modname}: {e}")
-                    continue
-        self.loaded_modules = loaded
-        return loaded
 
-    async def reload_modules(self):
-        if not self.loaded_modules:
-            return []
-        reloaded = []
-        for modname in self.loaded_modules:
-            full_name = f"{MODULES_DIR}.{modname}"
-            try:
-                # Вызов shutdown() перед перезагрузкой
-                if full_name in sys.modules:
-                    old_module = sys.modules[full_name]
-                    if hasattr(old_module, "shutdown"):
-                        try:
-                            if asyncio.iscoroutinefunction(old_module.shutdown):
-                                await old_module.shutdown()
-                            else:
-                                old_module.shutdown()
-                            logger.info(f"Модуль {modname}: shutdown() выполнен")
-                        except Exception as e:
-                            logger.error(f"Ошибка shutdown() в {modname}: {e}")
+def load_modules(raw_client, ctx) -> list[str]:
+    """
+    Загружает все модули из modules/.
+    raw_client используется для обновления прокси перед init().
+    ctx.handlers будет пополняться через прокси.
+    """
+    from core.client import _set_current_client
+    _set_current_client(raw_client)   # прокси → raw_client этого аккаунта
 
-                # Перезагрузка модуля
-                mod = importlib.reload(sys.modules[full_name] if full_name in sys.modules else importlib.import_module(full_name))
-                if hasattr(mod, "init"):
-                    mod.init()
-                reloaded.append(modname)
-                logger.info(f"Модуль {modname} перезагружен")
-            except Exception as e:
-                logger.error(f"Ошибка перезагрузки модуля {modname}: {e}")
-                continue
-        return reloaded
-
-    def _is_safe_module(self, filepath):
-        import re
+    MODULES_PATH.mkdir(parents=True, exist_ok=True)
+    result = []
+    for fname in sorted(MODULES_PATH.iterdir()):
+        if not fname.suffix == ".py" or fname.stem.startswith("_"):
+            continue
+        name = fname.stem
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                code = f.read()
-            if re.search(r'\beval\(', code) or re.search(r'\bexec\(', code):
-                logger.warning(f"Модуль {filepath} содержит опасный вызов: eval/exec")
-                return False
-            return True
-        except Exception:
-            return False
+            mod = importlib.import_module(f"{MODULES_DIR}.{name}")
+            if not hasattr(mod, "init"):
+                logger.warning(f"{name}: нет init(), пропущен"); continue
+            mod.init()
+            result.append(name)
+            logger.info(f"[LOAD] {name}")
+        except Exception as e:
+            logger.error(f"[FAIL] {name}: {e}")
 
-loader = ModuleLoader()
-load_modules = loader.load_modules
-reload_modules = loader.reload_modules    # теперь это асинхронная функция
+    _loaded_names[:] = result
+    return result
+
+
+async def reload_modules(raw_client, ctx) -> list[str]:
+    """
+    Перезагружает модули: shutdown → reload/import → init.
+    Подхватывает новые файлы, убирает удалённые.
+    """
+    from core.client import _set_current_client
+    _set_current_client(raw_client)
+
+    MODULES_PATH.mkdir(parents=True, exist_ok=True)
+    on_disk = {
+        f.stem for f in MODULES_PATH.iterdir()
+        if f.suffix == ".py" and not f.stem.startswith("_")
+    }
+
+    # Shutdown удалённых модулей
+    for name in set(_loaded_names) - on_disk:
+        await _shutdown_one(name)
+
+    result = []
+    for name in sorted(on_disk):
+        full = f"{MODULES_DIR}.{name}"
+        try:
+            await _shutdown_one(name)
+            mod = importlib.reload(sys.modules[full]) if full in sys.modules else importlib.import_module(full)
+            if hasattr(mod, "init"):
+                mod.init()
+            result.append(name)
+            logger.info(f"[RELOAD] {name}")
+        except Exception as e:
+            logger.error(f"[RELOAD FAIL] {name}: {e}")
+
+    _loaded_names[:] = result
+    return result
+
+
+def shutdown_modules(ctx) -> None:
+    """Синхронный shutdown всех загруженных модулей."""
+    for name in list(_loaded_names):
+        mod = sys.modules.get(f"{MODULES_DIR}.{name}")
+        if mod and hasattr(mod, "shutdown"):
+            try:
+                r = mod.shutdown()
+                if asyncio.iscoroutine(r):
+                    # Если нужен await — логируем, но не ломаем sync-контекст
+                    logger.warning(f"{name}.shutdown() вернул корутину в sync-контексте")
+            except Exception as e:
+                logger.error(f"[SHUTDOWN FAIL] {name}: {e}")
+    _loaded_names.clear()
+
+
+async def _shutdown_one(name: str) -> None:
+    mod = sys.modules.get(f"{MODULES_DIR}.{name}")
+    if mod and hasattr(mod, "shutdown"):
+        try:
+            r = mod.shutdown()
+            if asyncio.iscoroutine(r): await r
+        except Exception as e:
+            logger.error(f"[SHUTDOWN FAIL] {name}: {e}")
