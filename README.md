@@ -1,24 +1,20 @@
-<div align="center">
+🍬 Candy‑Userbot
 
-<img src="assets/banner.txt" alt="" />
+https://img.shields.io/badge/Python-3.9%2B-blue?logo=python
+https://img.shields.io/badge/Telethon-1.36+-blue?logo=telegram
+https://img.shields.io/badge/License-Apache%202.0-green.svg
+https://img.shields.io/badge/Platform-Android%20%7C%20Linux-lightgrey
 
-# 🍬 Candy Userbot
-
-**Модульный Telegram userbot на Python + Telethon**
-
-[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
-[![Telethon](https://img.shields.io/badge/Telethon-1.36%2B-2CA5E0?logo=telegram&logoColor=white)](https://docs.telethon.dev)
-[![License](https://img.shields.io/badge/License-Attribution--Required-orange)](./LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Termux%20%7C%20Linux%20%7C%20macOS-lightgrey)](#)
-
-</div>
+Candy‑Userbot — мощный асинхронный юзербот для Telegram с поддержкой нескольких аккаунтов, модульной архитектурой и фоновыми задачами. Работает на Android (Termux) и Linux.
 
 ---
 
-## ⚡ Установка одной командой
+🚀 Установка за 1 минуту
+
+Скопируйте и выполните в Termux (или в терминале Linux):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Vital-Candy/Candy-Userbot/main/install.sh | bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Vital-Candy/Candy-Userbot/main/installer.sh)"
 ```
 
 Или вручную:
@@ -26,153 +22,98 @@ curl -fsSL https://raw.githubusercontent.com/Vital-Candy/Candy-Userbot/main/inst
 ```bash
 git clone https://github.com/Vital-Candy/Candy-Userbot.git
 cd Candy-Userbot
-bash install.sh
+pip install -r requirements.txt
+python main.py
 ```
 
-> Скрипт автоматически установит зависимости (Termux и Debian/Ubuntu).  
-> При первом запуске добавь аккаунт через меню, введя `api_id` и `api_hash` с [my.telegram.org/apps](https://my.telegram.org/apps).
+Для Termux предварительно выполните termux-setup-storage и дайте доступ к хранилищу.
 
 ---
 
-## 🚀 Запуск
+✨ Возможности
 
-```bash
-cd Candy-Userbot
-python3 main.py
-```
-
-При запуске откроется **консольное меню**:
-
-```
-  АККАУНТЫ
-
-  [1]  Ivan Petrov  @ivanpetrov
-  [2]  Work Account @workaccount
-
-  A  — Добавить аккаунт
-  B  — Восстановить из бэкапа
-  0  — Выход
-```
-
-Выбери цифру → бот запустится для этого аккаунта.  
-`.stop` или `Ctrl+C` → вернуться в меню и сменить аккаунт.
+· ✅ Мультиаккаунтность — лёгкое переключение между аккаунтами.
+· ✅ Модульная система — добавляйте свои команды без перезапуска.
+· ✅ Фоновые задачи — например, часы в имени, автоответчики.
+· ✅ Встроенные команды:
+  · .help — справка
+  · .alive — статус
+  · .ping — задержка
+  · .spam — массовая рассылка
+  · .time — стильные часы в имени
+  · .reload, .restart, .stop, .clear
+· ✅ Бэкапы — создание и восстановление аккаунтов.
 
 ---
 
-## 👥 Мультиаккаунт
+📚 Команды
 
-Candy Userbot поддерживает несколько аккаунтов одновременно — каждый хранится отдельно в `accounts/<username>/`. Сессии никогда не попадают в git.
-
-| Действие | Как |
-|---|---|
-| Добавить аккаунт | `A` в меню → введи API данные |
-| Переключить аккаунт | `.stop` → выбери другой номер |
-| Создать бэкап | `.backup` в чате → файл на `/sdcard` |
-| Восстановить на другом устройстве | `B` в меню → укажи путь к zip |
-
----
-
-## 📋 Команды
-
-### Система (встроены в ядро)
-
-| Команда | Описание |
-|---|---|
-| `.help [команда]` | Список всех команд / справка |
-| `.ping` | Задержка бота |
-| `.alive` | Статус и аптайм |
-| `.reload` | Горячая перезагрузка модулей |
-| `.restart` | Перезапустить процесс |
-| `.stop` | Остановить → вернуться в меню |
-| `.clear` | Очистить кеш и логи |
-| `.backup` | Бэкап аккаунта на `/sdcard` |
-| `.update` | Обновить из GitHub (`git pull`) |
-
-### Модули
-
-| Команда | Описание |
-|---|---|
-| `.save` | Сохранить исчезающее фото / видео / кружочек |
-| `.user [@username]` | Информация о пользователе |
-| `.purge <N> [all]` | Удалить N сообщений |
-| `.spam <N> <текст>` | Отправить сообщение N раз |
-| `.tag all / random N` | Упомянуть участников группы |
-| `.time on [1-5]` | Живые часы в имени (5 стилей) |
-| `.time off` | Выключить часы, восстановить имя |
-| `.timer 10 / 1.30 / 2.00.00` | Таймер с уведомлением |
+Команда Описание
+.help [команда] Справка
+.alive Статус и аптайм
+.ping Проверка задержки
+.spam текст [-c кол-во] [-s задержка] Отправить несколько сообщений (по умолч. 5, макс 50)
+.spam stop Остановить спам
+.time [on <1-5>/off] Часы в имени (5 стилей)
+.reload Перезагрузить модули
+.restart Перезапустить юзербота
+.stop Вернуться в меню выбора аккаунта
+.clear Очистить кеш и лог
 
 ---
 
-## 📁 Структура проекта
+🧩 Структура проекта
 
 ```
 Candy-Userbot/
-├── core/
-│   ├── accounts.py   — мультиаккаунт: добавление, бэкап, восстановление
-│   ├── client.py     — прокси-клиент (смена аккаунта без перезапуска)
-│   ├── dispatcher.py — встроенные команды, реестр для .help
-│   └── loader.py     — загрузка / горячая перезагрузка модулей
-├── modules/          — подключаемые модули (init / shutdown)
-├── utils/            — пути, логгер, вспомогательные функции
-├── assets/           — баннер, логотип для .alive
-├── accounts/         — сессии аккаунтов (в .gitignore)
-├── main.py           — точка входа, консольное меню
-├── config.py         — версия, автор
-├── install.sh        — установка одной командой
+├── assets/                 # баннер, лого
+├── core/                   # ядро (менеджеры, клиент, загрузчик)
+├── modules/                # плагины (команды)
+├── utils/                  # утилиты (пути, логгер)
+├── accounts/               # данные аккаунтов (создаётся автоматически)
+├── backup/                 # резервные копии
+├── config.py               # версия, владелец, префикс
+├── main.py                 # точка входа
 └── requirements.txt
 ```
 
 ---
 
-## 🔧 Разработка модулей
+🛠 Для разработчиков
 
-Модуль — это `.py` файл в `modules/`. Минимальный шаблон:
+Добавление своего модуля
+
+1. Создайте modules/my_module.py.
+2. Реализуйте синхронные или асинхронные init() и shutdown().
+3. Зарегистрируйте команду через register_command().
+4. Используйте глобальный клиент: import core.client as client_state.
+
+Пример: смотрите modules/ping.py.
+
+Фоновые задачи
+
+Используйте BackgroundManager вашего аккаунта:
 
 ```python
-from telethon import events
-from core.client import client
-from core.dispatcher import register_command
-
-_registered_handlers = []
-
-def init():
-    global _registered_handlers
-    for h in _registered_handlers:
-        client.remove_event_handler(h)
-    _registered_handlers = []
-
-    register_command("mycommand", "Описание", ".mycommand", category="инструменты")
-    h = client.add_event_handler(my_handler,
-        events.NewMessage(outgoing=True, pattern=r"^\.mycommand$"))
-    _registered_handlers.append(h)
-
-def shutdown():
-    for h in _registered_handlers:
-        client.remove_event_handler(h)
-    _registered_handlers.clear()
-
-async def my_handler(event):
-    await event.edit("✅ Работает!")
+manager = _account.background
+await manager.start("task_name", worker)
+manager.set_state("task_name", {"enabled": True})
 ```
 
-Кинь файл в `modules/` → `.reload` подхватит без перезапуска.
+---
+
+📄 Лицензия
+
+Этот проект распространяется под лицензией Apache License 2.0 — подробности в файле LICENSE.
+Вы обязаны указывать оригинальное авторство (© Vital-Candy) и не удалять уведомления о лицензии.
 
 ---
 
-## 🔒 Безопасность
+🙏 Благодарности
 
-- `accounts/`, `*.session`, `config.json` в `.gitignore` — ключи никогда не попадут в репозиторий
-- Бэкапы создаются локально на устройстве, не передаются никуда
-
----
-
-## 📜 Лицензия
-
-Распространяется по [лицензии с обязательным указанием авторства](./LICENSE).  
-Использовать, форкать и изменять — свободно, но любая публичная копия обязана указывать:
-
-> Автор: [@Vital-Candy](https://github.com/Vital-Candy) · Оригинал: https://github.com/Vital-Candy/Candy-Userbot
+· Telethon — за основу.
+· Всем, кто тестирует и предлагает идеи.
 
 ---
 
-<div align="center">Сделано с 🍬 · <a href="https://github.com/Vital-Candy">Vital-Candy</a></div>
+🍬 Candy‑Userbot — сделано с ❤️ в Termux

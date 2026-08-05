@@ -1,174 +1,141 @@
-# core/accounts.py
-"""
-Файловые операции с аккаунтами: список, добавление, бэкап, восстановление.
-Runtime-состояние хранится в AccountContext (core/account_context.py).
-"""
+from __future__ import annotations
+
 import json
-import logging
-import os
+import shutil
 import zipfile
-from datetime import datetime
 from pathlib import Path
 
-from utils.paths import PROJECT_ROOT, ACCOUNTS_DIR
+from telethon import TelegramClient
+from telethon.errors import SessionPasswordNeededError
 
-logger = logging.getLogger("accounts")
+from core.account import Account
+from utils.paths import ACCOUNTS_DIR, BACKUP_DIR
 
-BACKUP_MARKER = "CandyUSERBOT_v1"
 
-
-# ── Список аккаунтов ──────────────────────────────────────────────────
-
-def list_accounts() -> list[dict]:
-    if not ACCOUNTS_DIR.exists():
-        return []
-    result = []
-    for entry in sorted(ACCOUNTS_DIR.iterdir()):
-        pf = entry / "profile.json"
-        if entry.is_dir() and pf.exists():
-            try:
-                result.append(json.loads(pf.read_text(encoding="utf-8")))
-            except Exception as e:
-                logger.warning(f"Ошибка профиля {entry.name}: {e}")
+def profiles() -> list[dict]:
+    result: list[dict] = []
+    for path in sorted(ACCOUNTS_DIR.glob("*/profile.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                result.append(data)
+        except Exception:
+            continue
     return result
 
 
-# ── Профиль ───────────────────────────────────────────────────────────
-
-def get_identifier(profile: dict) -> str:
-    return profile.get("username") or profile.get("phone") or str(profile.get("id", "unknown"))
-
-
-def get_account_dir(profile: dict) -> Path:
-    return ACCOUNTS_DIR / get_identifier(profile)
-
-
-def save_profile(profile: dict) -> None:
-    acc_dir = get_account_dir(profile)
-    acc_dir.mkdir(parents=True, exist_ok=True)
-    (acc_dir / "profile.json").write_text(
-        json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8"
+def account_from_profile(data: dict) -> Account:
+    name = data.get("username") or str(data["id"])
+    return Account(
+        account_id=int(data["id"]),
+        api_id=int(data["api_id"]),
+        api_hash=str(data["api_hash"]),
+        username=data.get("username") or None,
+        first_name=data.get("name") or "",
+        session_path=ACCOUNTS_DIR / name / "session",
     )
 
 
-# ── Добавить аккаунт интерактивно ─────────────────────────────────────
+async def add_account() -> dict:
+    api_id = int(input("API_ID: ").strip())
+    api_hash = input("API_HASH: ").strip()
+    phone = input("Номер (+...): ").strip()
 
-async def add_account_interactive() -> dict | None:
-    from telethon import TelegramClient
+    tmp_dir = ACCOUNTS_DIR / "_new"
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    G, R, C, W, B = "\033[32m", "\033[31m", "\033[36m", "\033[0m", "\033[1m"
-    print(f"\n  {C}── Добавить аккаунт ──{W}\n")
-    print(f"  Данные на {B}https://my.telegram.org/apps{W}\n")
-
-    try:
-        api_id   = int(input("  API_ID  › ").strip())
-        api_hash = input("  API_HASH › ").strip()
-        if not api_hash:
-            raise ValueError("api_hash пустой")
-    except (ValueError, KeyboardInterrupt, EOFError) as e:
-        print(f"\n  {R}[✗]{W} Отменено: {e}")
-        input("\n  Enter для продолжения...")
-        return None
-
-    ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = str(ACCOUNTS_DIR / "_tmp")
-    client = TelegramClient(tmp, api_id, api_hash)
+    client = TelegramClient(
+        str(tmp_dir / "session"),
+        api_id,
+        api_hash,
+    )
 
     try:
-        print()
-        await client.start()
+        await client.connect()
+        await client.send_code_request(phone)
+
+        code = input("Код Telegram: ").strip()
+        try:
+            await client.sign_in(phone, code)
+        except SessionPasswordNeededError:
+            password = input("Пароль 2FA: ").strip()
+            await client.sign_in(password=password)
+
         me = await client.get_me()
+        name = me.username or str(me.id)
+        account_dir = ACCOUNTS_DIR / name
+        account_dir.mkdir(parents=True, exist_ok=True)
 
-        identifier = me.username or str(me.phone or me.id)
-        acc_dir    = ACCOUNTS_DIR / identifier
-        acc_dir.mkdir(parents=True, exist_ok=True)
         await client.disconnect()
 
-        for ext in (".session", ".session-journal"):
-            src = Path(tmp + ext)
-            if src.exists():
-                src.replace(acc_dir / ("session" + ext))
+        for suffix in (".session", ".session-journal"):
+            source = Path(str(tmp_dir / "session") + suffix)
+            if source.exists():
+                shutil.move(
+                    str(source),
+                    str(account_dir / source.name),
+                )
 
-        profile = {
-            "api_id":   api_id,
-            "api_hash": api_hash,
-            "id":       me.id,
-            "name":     me.first_name or "",
+        data = {
+            "id": me.id,
             "username": me.username or "",
-            "phone":    str(me.phone or ""),
-            "added":    datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "name": me.first_name or "",
+            "api_id": api_id,
+            "api_hash": api_hash,
+            "session": "session",
         }
-        save_profile(profile)
-        print(f"\n  {G}[✓]{W} Аккаунт {B}{me.first_name}{W} добавлен!")
-        input("\n  Enter для продолжения...")
-        return profile
-
-    except KeyboardInterrupt:
-        print(f"\n  {R}[✗]{W} Отменено")
-    except Exception as e:
-        print(f"\n  {R}[✗]{W} Ошибка: {e}")
+        (account_dir / "profile.json").write_text(
+            json.dumps(
+                data,
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        return data
     finally:
         if client.is_connected():
             await client.disconnect()
-        for ext in (".session", ".session-journal"):
-            p = Path(tmp + ext)
-            if p.exists():
-                p.unlink(missing_ok=True)
-
-    input("\n  Enter для продолжения...")
-    return None
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-# ── Бэкап ─────────────────────────────────────────────────────────────
+def create_backup(profile: dict) -> Path:
+    name = profile.get("username") or str(profile["id"])
+    folder = ACCOUNTS_DIR / name
+    if not folder.is_dir():
+        raise FileNotFoundError(folder)
 
-def backup_account(profile: dict) -> str:
-    if os.path.isdir("/sdcard") and os.access("/sdcard", os.W_OK):
-        dest = Path("/sdcard/Download/Candy-Userbot/Backups")
-    else:
-        dest = Path.home() / "CandyUserbot-Backups"
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    output = BACKUP_DIR / f"{name}.zip"
 
-    dest.mkdir(parents=True, exist_ok=True)
-    identifier = get_identifier(profile)
-    acc_dir    = get_account_dir(profile)
-    zip_path   = dest / f"candy_backup_{identifier}.zip"
-
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("candy_backup.marker", BACKUP_MARKER)
-        for fname in ("profile.json", "session.session"):
-            p = acc_dir / fname
-            if p.exists():
-                zf.write(p, fname)
-        state = PROJECT_ROOT / "time_name_state.json"
-        if state.exists():
-            zf.write(state, "time_name_state.json")
-
-    return str(zip_path)
+    with zipfile.ZipFile(
+        output,
+        "w",
+        zipfile.ZIP_DEFLATED,
+    ) as archive:
+        for path in folder.rglob("*"):
+            if path.is_file():
+                archive.write(
+                    path,
+                    path.relative_to(ACCOUNTS_DIR),
+                )
+    return output
 
 
-# ── Восстановление ────────────────────────────────────────────────────
+def restore_backup(path: str) -> None:
+    source = Path(path).expanduser()
+    if not source.exists() and not source.is_absolute():
+        source = BACKUP_DIR / source
 
-def restore_account(zip_path: str) -> str:
-    zp = Path(zip_path)
-    if not zp.exists():
-        raise FileNotFoundError(f"Файл не найден: {zip_path}")
+    if not source.is_file():
+        raise FileNotFoundError(source)
 
-    with zipfile.ZipFile(zp, "r") as zf:
-        names = zf.namelist()
-        if "candy_backup.marker" not in names:
-            raise ValueError("Не бэкап Candy Userbot")
-        if "profile.json" not in names:
-            raise ValueError("Нет profile.json в архиве")
+    root = ACCOUNTS_DIR.resolve()
+    with zipfile.ZipFile(source) as archive:
+        for member in archive.infolist():
+            target = (ACCOUNTS_DIR / member.filename).resolve()
+            if target != root and root not in target.parents:
+                raise ValueError("Опасный путь в ZIP")
 
-        profile    = json.loads(zf.read("profile.json").decode("utf-8"))
-        identifier = get_identifier(profile)
-        acc_dir    = ACCOUNTS_DIR / identifier
-        acc_dir.mkdir(parents=True, exist_ok=True)
-
-        for name in names:
-            if name == "candy_backup.marker":
-                continue
-            dest = (PROJECT_ROOT / name) if name == "time_name_state.json" else (acc_dir / name)
-            with zf.open(name) as src, open(dest, "wb") as dst:
-                dst.write(src.read())
-
-    return identifier
+        archive.extractall(ACCOUNTS_DIR)

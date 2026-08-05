@@ -1,121 +1,215 @@
-# main.py
-"""
-Точка входа Candy-Userbot.
+from __future__ import annotations
 
-Этап 2: параллельный запуск нескольких аккаунтов.
-  1. Миграция старой сессии (если есть).
-  2. Загрузка профилей из accounts/.
-  3. Параллельное подключение всех аккаунтов.
-  4. Если нет аккаунтов — добавление через терминал.
-  5. Активация dispatcher + модулей на первом/активном аккаунте.
-  6. run_until_disconnected для каждого аккаунта как asyncio.Task.
-  7. Ctrl+C → корректная остановка всех.
-"""
 import asyncio
 import os
-import sys
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
+from config import VERSION
+from core.accounts import (
+    account_from_profile,
+    add_account,
+    create_backup,
+    profiles,
+    restore_backup,
+)
+from core.app import UserbotApp
+from core.client import set_client
 from utils.logger import setup_logger
-from utils.paths import PROJECT_ROOT, ACCOUNTS_DIR, ensure_dirs
+from utils.paths import ASSETS_DIR, ensure_dirs
 
 logger = setup_logger()
 
-G  = "\033[32m"; Y = "\033[33m"; R = "\033[31m"
-C  = "\033[36m"; W = "\033[0m";  B = "\033[1m"; DIM = "\033[2m"
+
+def banner() -> None:
+    os.system("cls" if os.name == "nt" else "clear")
+
+    path = ASSETS_DIR / "banner.txt"
+    if path.is_file():
+        print(
+            path.read_text(
+                encoding="utf-8"
+            )
+        )
+
+    print(f"🍬 Candy-Userbot v{VERSION}\n")
 
 
-def _print_banner():
+def choose(
+    items: list[dict],
+    title: str,
+) -> str:
+    print(title)
+    for index, item in enumerate(
+        items,
+        start=1,
+    ):
+        name = (
+            item.get("username")
+            or item.get("name")
+            or item.get("id")
+        )
+        print(f"[{index}] {name}")
+
+    return input("\nВыбор: ").strip()
+
+
+def backup_menu() -> None:
+    while True:
+        banner()
+        print(
+            "[1] Создать backup\n"
+            "[2] Восстановить backup\n"
+            "[0] Назад"
+        )
+
+        choice = input("\nВыбор: ").strip()
+
+        if choice == "0":
+            return
+
+        if choice == "1":
+            items = profiles()
+            if not items:
+                input(
+                    "Нет аккаунтов. Enter"
+                )
+                continue
+
+            selected = choose(
+                items,
+                "Выбери аккаунт",
+            )
+            if (
+                selected.isdigit()
+                and 1 <= int(selected)
+                <= len(items)
+            ):
+                output = create_backup(
+                    items[int(selected) - 1]
+                )
+                input(
+                    f"✅ {output}\nEnter"
+                )
+
+        elif choice == "2":
+            from utils.paths import BACKUP_DIR
+
+            print(
+                "Папка:",
+                BACKUP_DIR,
+            )
+            path = input(
+                "Имя ZIP или полный путь: "
+            ).strip()
+
+            try:
+                restore_backup(path)
+                print(
+                    "✅ Backup восстановлен"
+                )
+            except Exception as exc:
+                print("❌", exc)
+
+            input("Enter")
+
+
+async def run_account(
+    profile: dict,
+) -> None:
+    from core.dispatcher import setup
+    from core.loader import (
+        load_modules,
+        shutdown_modules,
+    )
+
+    account = account_from_profile(
+        profile
+    )
+    app = UserbotApp(account)
+
     try:
-        print((PROJECT_ROOT / "assets" / "banner.txt").read_text(encoding="utf-8"))
-    except Exception:
-        pass
-    from config import VERSION, OWNER
-    print(f"  {B}Candy Userbot{W}  v{VERSION}  {DIM}|{W}  {Y}{OWNER}{W}\n")
+        await app.start()
+    except Exception as exc:
+        print("❌", exc)
+        input("Enter")
+        return
 
+    set_client(app.client)
+    setup(
+        app.client,
+        app.stop_event,
+    )
+    load_modules()
 
-async def _run_account_task(ctx) -> None:
-    """Держит аккаунт подключённым (run_until_disconnected)."""
+    print(
+        f"✅ Запущен: "
+        f"{account.display_name}\n"
+        "Команды: .help | .stop"
+    )
+
     try:
-        await ctx.client.run_until_disconnected()
-    except Exception as e:
-        logger.warning(f"[{ctx.display_name}] run_until_disconnected: {e}")
+        await app.stop_event.wait()
+    finally:
+        await shutdown_modules()
+        set_client(None)
+        await app.stop()
 
 
 async def main() -> None:
     ensure_dirs()
-    _print_banner()
 
-    from core.account_manager import account_manager
-    from core.session_migration import migrate_if_needed
+    while True:
+        banner()
+        items = profiles()
 
-    # 1. Миграция старой сессии
-    migrated = await migrate_if_needed(PROJECT_ROOT, ACCOUNTS_DIR)
-    if migrated:
-        print(f"  {G}[✓]{W} Старая сессия успешно перенесена\n")
+        print("Аккаунты:\n")
+        for index, item in enumerate(
+            items,
+            start=1,
+        ):
+            name = (
+                item.get("username")
+                or item.get("name")
+                or item.get("id")
+            )
+            print(f"[{index}] {name}")
 
-    # 2. Загрузка профилей
-    profiles = account_manager.load_profiles(ACCOUNTS_DIR)
+        print(
+            "\n[A] Добавить аккаунт"
+            "\n[B] Backup"
+            "\n[0] Выход"
+        )
 
-    # 3. Если нет аккаунтов — добавляем
-    if not profiles:
-        print(f"  {Y}Аккаунтов нет.{W} Добавим первый.\n")
-        print(f"  Данные: {B}https://my.telegram.org/apps{W}\n")
-        try:
-            api_id   = int(input("  API_ID  › ").strip())
-            api_hash = input("  API_HASH › ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print(f"\n  {R}Отменено.{W}"); return
+        choice = input(
+            "\nВыбор: "
+        ).strip().lower()
 
-        ctx = await account_manager.add_account(api_id, api_hash)
-        if not ctx:
-            print(f"  {R}[✗]{W} Не удалось добавить аккаунт."); return
+        if choice == "0":
+            return
 
-        print(f"\n  {G}[✓]{W} Добавлен: {B}{ctx.display_name}{W}\n")
-        account_manager.save_profile(ctx, ACCOUNTS_DIR)
-        profiles = account_manager.load_profiles(ACCOUNTS_DIR)
+        if choice == "a":
+            try:
+                await add_account()
+                print(
+                    "✅ Аккаунт добавлен"
+                )
+            except Exception as exc:
+                print("❌", exc)
 
-    # 4. Параллельное подключение всех аккаунтов
-    print(f"  {C}Подключаю аккаунты...{W}")
-    ok, fail = await account_manager.start_all(profiles)
-    print(f"  {G}[✓]{W} Подключено: {ok}  {R}[✗]{W} Ошибок: {fail}\n")
+            input("Enter")
+            continue
 
-    connected = account_manager.connected()
-    if not connected:
-        print(f"  {R}Нет подключённых аккаунтов. Проверь сессии.{W}")
-        return
+        if choice == "b":
+            backup_menu()
+            continue
 
-    # 5. Активируем первый подключённый аккаунт (dispatcher + modules)
-    first = connected[0]
-    from core.account_runner import activate_account
-    activate_account(first)
-    account_manager.set_active_account.__func__   # satisfy linters
-    account_manager._active_id = first.account_id
-
-    print(f"  {G}[✓]{W} Активный аккаунт: {B}{first.display_name}{W}")
-    for ctx in connected:
-        flag = " ← активный" if ctx is first else ""
-        print(f"       {'🟢' if ctx is first else '🔵'} {ctx.display_name}{flag}")
-    print(f"\n  {DIM}Ctrl+C → остановка  |  .stop → меню  |  .accounts → список{W}\n")
-
-    # 6. run_until_disconnected для каждого аккаунта как Task
-    run_tasks = [
-        asyncio.ensure_future(_run_account_task(ctx))
-        for ctx in connected
-    ]
-
-    try:
-        await asyncio.gather(*run_tasks, return_exceptions=True)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        print(f"\n  {Y}Останавливаю все аккаунты...{W}")
-        for t in run_tasks:
-            if not t.done(): t.cancel()
-        await account_manager.stop_all()
-        print(f"  {G}[✓]{W} Завершено.\n")
+        if (
+            choice.isdigit()
+            and 1 <= int(choice)
+            <= len(items)
+        ):
+            await run_account(
+                items[int(choice) - 1]
+            )
 
 
 if __name__ == "__main__":

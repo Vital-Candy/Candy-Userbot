@@ -1,191 +1,195 @@
-# modules/time_name.py
+from __future__ import annotations
+
 import asyncio
-import json
-import logging
-from datetime import datetime, timedelta
-from telethon import events, functions, errors
+from datetime import datetime
+
+from telethon import events
+from telethon.tl.functions.account import UpdateProfileRequest
+
+import core.client as client_state
 from core.dispatcher import register_command
-from core.client import client
-from utils.tools import get_args
 
-logger = logging.getLogger("time_name")
-
-STATE_FILE = "time_name_state.json"
-
-STYLE_MAPS = {
-    1: str.maketrans("0123456789", "𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵"),
-    2: str.maketrans("0123456789", "𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡"),
-    3: str.maketrans("0123456789", "①②③④⑤⑥⑦⑧⑨⓪"),
-    4: str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉"),
-    5: str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹"),
+TASK = "time_name"
+STYLES = {
+    1: "𝟭𝟰:𝟯𝟱",
+    2: "𝟙𝟜:𝟛𝟝",
+    3: "𝟷𝟺:𝟹𝟻",
+    4: "¹⁴:³⁵",
+    5: "⑭:㉟",
 }
+_handler = None
+_conversation_handler = None
+_waiting: dict[int, tuple[str, int | None]] = {}
 
-original_first_name = None
-active_task = None
-current_style = 1
-_registered_handlers = []
 
-def load_state():
-    try:
-        with open(STATE_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {"running": False, "original_name": None, "style": 1}
+def _state():
+    from core.app import UserbotApp
+    # account is attached by init; avoids global account singleton
+    return _account.background.get_state(TASK, {})
 
-def save_state(state):
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
 
-async def restore_name():
-    """Восстанавливает оригинальное имя, если клиент ещё подключён."""
-    if not client.is_connected():
-        logger.warning("Клиент отключён, восстановление имени невозможно")
-        return
-    state = load_state()
-    orig = state.get("original_name")
-    if orig:
-        try:
-            await client(functions.account.UpdateProfileRequest(first_name=orig))
-            logger.info("Имя восстановлено")
-        except Exception as e:
-            logger.error(f"Ошибка восстановления имени: {e}")
+def _format(style: int) -> str:
+    now = datetime.now().strftime("%H:%M")
 
-async def shutdown():
-    """Безопасно отключает часы, восстанавливает имя и снимает обработчики."""
-    global active_task, _registered_handlers
-    if active_task and not active_task.done():
-        active_task.cancel()
-        try:
-            await active_task
-        except asyncio.CancelledError:
-            pass
-        active_task = None
-    await restore_name()
-    state = load_state()
-    state["running"] = False
-    save_state(state)
-    for handler in _registered_handlers:
-        client.remove_event_handler(handler)
-    _registered_handlers = []
+    alphabets = {
+        1: "𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵",
+        2: "𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡",
+        3: "𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿",
+        4: "⁰¹²³⁴⁵⁶⁷⁸⁹",
+        5: "⓪①②③④⑤⑥⑦⑧⑨",
+    }
 
-def init():
-    global original_first_name, active_task, current_style, _registered_handlers
-    for handler in _registered_handlers:
-        client.remove_event_handler(handler)
-    _registered_handlers = []
-    h = client.add_event_handler(time_handler, events.NewMessage(outgoing=True, pattern=r"^\.time(?: (.+))?"))
-    _registered_handlers.append(h)
-
-    register_command(
-    "time",
-    "Живые часы в имени",
-    ".time on [стиль] | .time off",
-    "Меняет имя в реальном времени стилизованными цифрами.\n"
-    "Стили: 1–5 (жирные, контурные, обведённые, подстрочные, надстрочные).",
-    category="дизайн"
+    table = str.maketrans(
+        "0123456789",
+        alphabets[style],
     )
-    state = load_state()
-    if state.get("running"):
-        original_first_name = state.get("original_name")
-        current_style = state.get("style", 1)
-        if active_task and not active_task.done():
-            active_task.cancel()
-        active_task = asyncio.create_task(update_name_loop())
-        logger.info("Часы автоматически перезапущены после перезагрузки")
-    else:
-        if active_task and not active_task.done():
-            active_task.cancel()
-        active_task = None
-    logger.info("Модуль time_name инициализирован")
 
-def format_time(style: int, now_time: str) -> str:
-    return now_time.translate(STYLE_MAPS.get(style, STYLE_MAPS[1]))
+    return now.translate(table)
 
-async def update_name_loop():
-    global original_first_name, current_style
-    state = load_state()
-    original_first_name = state.get("original_name")
-    try:
-        now = datetime.now()
-        seconds_until_next_minute = 60 - now.second
-        await asyncio.sleep(seconds_until_next_minute)
-        while True:
-            now = datetime.now()
-            styled_time = format_time(current_style, now.strftime("%H:%M"))
-            display_name = f"{original_first_name} | {styled_time}"
-            try:
-                await client(functions.account.UpdateProfileRequest(first_name=display_name))
-            except errors.FloodWaitError as e:
-                logger.warning(f"FloodWait {e.seconds}с")
-                await asyncio.sleep(e.seconds)
-                continue
-            except Exception as e:
-                logger.error(f"Ошибка обновления: {e}")
-                await asyncio.sleep(5)
-                continue
-            next_minute = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
-            wait_seconds = (next_minute - datetime.now()).total_seconds()
-            if wait_seconds > 0:
-                await asyncio.sleep(wait_seconds)
-    except asyncio.CancelledError:
-        raise
 
-async def time_handler(event):
-    global original_first_name, active_task, current_style
-    args = get_args(event)
-    if not args:
-        await event.edit("❌ Используй: .time on [стиль] или .time off")
-        return
+async def _set_name(name: str) -> None:
+    await client_state.client(UpdateProfileRequest(first_name=name))
 
-    action = args[0].lower()
-    if action == "off":
-        if active_task and not active_task.done():
-            active_task.cancel()
-            try:
-                await active_task
-            except asyncio.CancelledError:
-                pass
-            active_task = None
-        await restore_name()
-        state = load_state()
-        state["running"] = False
-        save_state(state)
-        await event.edit("⏹ Часы отключены. Имя восстановлено.")
-        return
 
-    if action == "on":
-        if active_task and not active_task.done():
-            await event.edit("⏳ Часы уже работают.")
+async def _worker() -> None:
+    while True:
+        state = _account.background.get_state(TASK, {})
+        if not state.get("enabled"):
             return
+        style = int(state.get("style", 1))
+        original = state.get("original_name", "")
+        await _set_name(f"{original} | {_format(style)}")
+        delay = 60 - datetime.now().second
+        await asyncio.sleep(max(1, delay))
 
-        style = 1
-        if len(args) >= 2:
-            try:
-                style = int(args[1])
-                if style not in STYLE_MAPS:
-                    style = 1
-            except:
-                pass
-        current_style = style
 
-        me = await client.get_me()
-        original_first_name = me.first_name or ""
-        save_state({
-            "running": True,
-            "original_name": original_first_name,
-            "style": style
-        })
+async def _enable(style: int) -> None:
+    me = await client_state.client.get_me()
+    current = (me.first_name or "").strip()
+    state = _account.background.get_state(TASK, {})
+    original = state.get("original_name") if state.get("enabled") else current
+    if not original:
+        original = current
+    _account.background.set_state(TASK, {
+        "enabled": True, "style": style, "original_name": original,
+    })
+    await _account.background.stop(TASK)
+    await _account.background.start(TASK, _worker)
 
-        active_task = asyncio.create_task(update_name_loop())
 
-        now = datetime.now()
-        styled_time = format_time(style, now.strftime("%H:%M"))
-        display_name = f"{original_first_name} | {styled_time}"
-        try:
-            await client(functions.account.UpdateProfileRequest(first_name=display_name))
-            await event.edit(f"✅ Часы в имени включены (стиль {style}).")
-        except Exception as e:
-            logger.error(f"Не удалось сразу обновить имя: {e}")
-            await event.edit(f"⚠️ Часы запущены, но обновление отложено.")
+async def _disable() -> None:
+    state = _account.background.get_state(TASK, {})
+    await _account.background.stop(TASK)
+    original = state.get("original_name", "")
+    if original:
+        await _set_name(original)
+    _account.background.set_state(TASK, {
+        "enabled": False, "style": int(state.get("style", 1)),
+        "original_name": original,
+    })
+
+
+def _menu() -> str:
+    return "🎨 <b>Выбери стиль:</b>\n\n" + "\n".join(
+        f"[{n}] {v}" for n, v in STYLES.items()
+    ) + "\n\nОтветь номером от 1 до 5."
+
+
+async def _conversation(event):
+    chat_id = event.chat_id
+    waiting = _waiting.get(chat_id)
+    if not waiting:
+        return
+    text = (event.raw_text or "").strip().lower()
+    stage, command_id = waiting
+    if stage == "confirm":
+        if text not in {"да", "нет"}:
+            return
+        _waiting.pop(chat_id, None)
+        await event.delete()
+        if text == "нет":
+            if command_id:
+                await client_state.client.delete_messages(chat_id, command_id)
+            return
+        await client_state.client.edit_message(chat_id, command_id, _menu(), parse_mode="html")
+        _waiting[chat_id] = ("style", command_id)
+        return
+    if stage == "style":
+        if text not in {"1", "2", "3", "4", "5"}:
+            return
+        _waiting.pop(chat_id, None)
+        await event.delete()
+        await _enable(int(text))
+        await client_state.client.edit_message(chat_id, command_id, f"✅ Часы включены\nСтиль: <code>{_format(int(text))}</code>", parse_mode="html")
+
+
+async def _command(event):
+    parts = (event.pattern_match.group(1) or "").strip().lower().split()
+    state = _account.background.get_state(TASK, {})
+    enabled = bool(state.get("enabled"))
+    if parts[:1] == ["off"]:
+        await _disable()
+        await event.edit("✅ Часы выключены. Оригинальное имя восстановлено.")
+        return
+    if parts[:1] == ["on"] and len(parts) == 2 and parts[1].isdigit() and int(parts[1]) in STYLES:
+        await _enable(int(parts[1]))
+        await event.edit(f"✅ Часы включены. Стиль: <code>{_format(int(parts[1]))}</code>", parse_mode="html")
+        return
+    if parts:
+        await event.edit("❌ Использование: <code>.time</code>, <code>.time on 1</code> или <code>.time off</code>", parse_mode="html")
+        return
+    if enabled:
+        await event.edit(_menu(), parse_mode="html")
+        _waiting[event.chat_id] = ("style", event.id)
     else:
-        await event.edit("❌ Действие должно быть 'on' или 'off'.")
+        await event.edit("🕒 Часы выключены.\n\nВключить?\nОтветь: <b>Да</b> или <b>Нет</b>", parse_mode="html")
+        _waiting[event.chat_id] = ("confirm", event.id)
+
+
+def init() -> None:
+    global _handler, _conversation_handler, _account
+    if client_state.client is None:
+        raise RuntimeError("TelegramClient не установлен")
+    from core.app import current_account
+    _account = current_account()
+    register_command("time", "Часы в имени", ".time [on <1-5>/off]", "Дизайн")
+    _handler = client_state.client.add_event_handler(_command, events.NewMessage(outgoing=True, pattern=r"^\.time(?:\s+(.*))?$"))
+    _conversation_handler = client_state.client.add_event_handler(_conversation, events.NewMessage(outgoing=True))
+    state = _account.background.get_state(TASK, {})
+    if state.get("enabled"):
+        asyncio.create_task(_resume())
+
+
+async def _resume() -> None:
+    me = await client_state.client.get_me()
+    state = _account.background.get_state(TASK, {})
+    # On every new launch, current Telegram name becomes the new original.
+    current = (me.first_name or "").strip()
+    old = state.get("original_name", "")
+    suffix = f" | {_format(int(state.get('style', 1)))}"
+    if old and current.startswith(old + " | "):
+        current = old
+    _account.background.update_state(TASK, original_name=current)
+    await _account.background.start(TASK, _worker)
+
+
+async def shutdown() -> None:
+    global _handler, _conversation_handler
+    _waiting.clear()
+    state = _account.background.get_state(TASK, {})
+    was_enabled = bool(state.get("enabled"))
+    try:
+        await _account.background.stop(TASK)
+        original = state.get("original_name", "")
+        if was_enabled and original:
+            await _set_name(original)
+    finally:
+        # .stop restores the name but keeps auto-start enabled for the next launch.
+        _account.background.set_state(TASK, {**state, "enabled": was_enabled})
+    if client_state.client is not None:
+        if _handler is not None:
+            client_state.client.remove_event_handler(_handler)
+        if _conversation_handler is not None:
+            client_state.client.remove_event_handler(_conversation_handler)
+    _handler = None
+    _conversation_handler = None

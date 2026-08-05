@@ -1,18 +1,7 @@
-# Секреты и сессии — никогда не коммитить
-config.json
+accounts/
+backup/
 *.session
 *.session-journal
-backup/
-
-# Кеш и временные файлы
-cache/
-temp_update/
-temp_update.zip
-time_name_state.json
-userbot.log
-
-# Python
 __pycache__/
 *.pyc
-.venv/
-venv/
+userbot.log
