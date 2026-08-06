@@ -13,23 +13,20 @@ echo "=============================="
 if [ -d "/data/data/com.termux" ]; then
     echo -e "${YELLOW}Обнаружен Termux${NC}"
     PKG="pkg"
-    # Даём доступ к /sdcard, если ещё не дали
-    if [ ! -d "/sdcard" ]; then
-        echo "Запустите termux-setup-storage и дайте разрешение."
-        exit 1
-    fi
+    INSTALL_DIR="$HOME/Candy-Userbot"
 else
     PKG="apt"
+    INSTALL_DIR="$(pwd)/Candy-Userbot"
 fi
 
 # Проверка Python
-if ! command -v python3 &> /dev/null; then
+if ! command -v python3 >/dev/null 2>&1; then
     echo "Устанавливаем Python..."
     $PKG update -y && $PKG install python3 -y
 fi
 
 # Проверка Git
-if ! command -v git &> /dev/null; then
+if ! command -v git >/dev/null 2>&1; then
     echo "Устанавливаем Git..."
     $PKG install git -y
 fi
@@ -41,28 +38,30 @@ if [[ $(echo "$PY_VER < 3.9" | bc) -eq 1 ]]; then
     exit 1
 fi
 
-# Проверяем, что мы в папке проекта
-if [ ! -f "main.py" ]; then
-    echo -e "${YELLOW}Похоже, мы не в папке Candy-Userbot.${NC}"
-    echo "Клонирую репозиторий в текущую директорию..."
-    git clone https://github.com/Vital-Candy/Candy-Userbot.git temp
-    cp -r temp/* .
-    cp -r temp/.[!.]* . 2>/dev/null || true
-    rm -rf temp
+# Клонирование проекта
+if [ ! -d "$INSTALL_DIR/.git" ]; then
+    echo -e "${YELLOW}Клонирование Candy-Userbot...${NC}"
+    rm -rf "$INSTALL_DIR"
+    git clone https://github.com/Vital-Candy/Candy-Userbot.git "$INSTALL_DIR"
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Не удалось клонировать репозиторий.${NC}"
+        exit 1
+    fi
 fi
+
+cd "$INSTALL_DIR" || exit 1
 
 # Установка зависимостей
 echo -e "${YELLOW}Установка зависимостей...${NC}"
-pip install --upgrade pip
-pip install -r requirements.txt
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt
 
-# Создаём скрипт для простого запуска
-cat > run.sh << 'EOF'
-#!/bin/bash
-python3 main.py
-EOF
-chmod +x run.sh
-
+echo
 echo -e "${GREEN}✅ Установка завершена!${NC}"
-echo "Теперь запустите: ./run.sh"
-echo "Если вы в Termux, убедитесь, что дали доступ к хранилищу (termux-setup-storage)."
+echo
+echo "Проект установлен в:"
+echo "$INSTALL_DIR"
+echo
+echo "Запуск:"
+echo "cd \"$INSTALL_DIR\""
+echo "python3 main.py"
