@@ -14,6 +14,14 @@ from utils.paths import ASSETS_DIR, PROJECT_ROOT
 _registry: dict[str, tuple[str, str, str]] = {}
 _started = time.monotonic()
 
+CATEGORY_ICONS = {
+    "Система": "⚙️",
+    "Инструменты": "🛠️",
+    "Информация": "ℹ️",
+    "Профиль": "👤",
+    "Безопасность": "🛡️",
+}
+
 
 def register_command(
     name: str,
@@ -95,13 +103,17 @@ def setup(client, on_stop: asyncio.Event) -> None:
             )
 
         text = "🍬 <b>Candy-Userbot — команды</b>\n"
-        for category, items in groups.items():
-            text += f"\n<b>{category}</b>\n"
-            text += "\n".join(
-                f"• <code>.{name}</code> — {description}"
-                for name, description in items
-            )
-            text += "\n"
+
+        for category in sorted(groups):
+            icon = CATEGORY_ICONS.get(category, "📁")
+
+            text += f"\n{icon} <b>{category}</b>\n"
+
+            for name, description in sorted(groups[category]):
+                text += (
+                    f"• <code>.{name}</code> — "
+                    f"{description}\n"
+                )
 
         await event.edit(
             text,
