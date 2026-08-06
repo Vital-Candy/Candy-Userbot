@@ -14,16 +14,8 @@ _handler = None
 
 
 def _parse_args(raw: str) -> tuple[bool, str | None]:
-    """
-    Разбирает аргументы команды.
-
-    Возвращает (hide_phone, target)
-    hide_phone — True если указан флаг -n
-    target — строка с @username, ID или None
-    """
     if not raw:
         return False, None
-
     parts = shlex.split(raw)
     hide_phone = "-n" in parts
     if hide_phone:
@@ -33,25 +25,21 @@ def _parse_args(raw: str) -> tuple[bool, str | None]:
 
 
 async def _get_entity(target: str | None):
-    """Получает сущность пользователя по цели."""
     if target is None:
         return await client_state.client.get_me()
     return await client_state.client.get_entity(target)
 
 
 async def user_command(event) -> None:
-    """Обработчик команды .user."""
     try:
         raw = (event.pattern_match.group(1) or "").strip()
         hide_phone, target = _parse_args(raw)
 
-        # Получаем сущность пользователя
         entity = await _get_entity(target)
         full = await client_state.client(GetFullUserRequest(entity))
         me = await client_state.client.get_me()
         is_self = (entity.id == me.id)
 
-        # Формируем информацию
         info = "👤 <b>Информация о пользователе</b>\n\n"
         if entity.first_name:
             info += f"<b>Имя:</b> {entity.first_name}\n"
@@ -61,7 +49,6 @@ async def user_command(event) -> None:
             info += f"<b>Юзернейм:</b> @{entity.username}\n"
         info += f"<b>ID:</b> <code>{entity.id}</code>\n"
 
-        # Телефон показываем только для себя и если не скрыт
         if is_self and not hide_phone and hasattr(entity, 'phone') and entity.phone:
             info += f"<b>Телефон:</b> <code>{entity.phone}</code>\n"
         elif is_self and hide_phone:
@@ -78,8 +65,9 @@ async def user_command(event) -> None:
                 common = await client_state.client.get_common_chats(entity)
                 if common:
                     info += f"<b>Общих чатов:</b> {len(common)}\n"
-            except RPCError:
-                pass
+            except (RPCError, AttributeError) as e:
+                logger.debug("Не удалось получить общие чаты: %s", e)
+                # Пропускаем, это не критично
 
         await event.edit(info, parse_mode="html")
 
@@ -89,7 +77,6 @@ async def user_command(event) -> None:
 
 
 def init() -> None:
-    """Инициализация модуля."""
     global _handler
     if client_state.client is None:
         raise RuntimeError("TelegramClient не установлен")
@@ -108,7 +95,6 @@ def init() -> None:
 
 
 async def shutdown() -> None:
-    """Остановка модуля."""
     global _handler
     if client_state.client is not None and _handler is not None:
         client_state.client.remove_event_handler(_handler)

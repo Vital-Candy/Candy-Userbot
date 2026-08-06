@@ -4,6 +4,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ASSETS_DIR = PROJECT_ROOT / "assets"
 ACCOUNTS_DIR = PROJECT_ROOT / "accounts"
 
+# Папки для временного хранения и загрузок
+CACHE_DIR = PROJECT_ROOT / "cache"
+DOWNLOAD_DIR = PROJECT_ROOT / "downloads"
+
 SDCARD = Path("/sdcard")
 BACKUP_DIR = (
     SDCARD / "Download" / "Candy-Userbot" / "Backup"
