@@ -13,48 +13,63 @@ echo "=============================="
 if [ -d "/data/data/com.termux" ]; then
     echo -e "${YELLOW}Обнаружен Termux${NC}"
     PKG="pkg"
-    INSTALL_DIR="$HOME/Candy-Userbot"
+
+    if [ ! -d "/sdcard" ]; then
+        echo "Запустите:"
+        echo "termux-setup-storage"
+        echo "и выдайте доступ к памяти."
+        exit 1
+    fi
 else
     PKG="apt"
-    INSTALL_DIR="$(pwd)/Candy-Userbot"
 fi
 
-# Проверка Python
+# Python
 if ! command -v python3 >/dev/null 2>&1; then
-    echo "Устанавливаем Python..."
-    $PKG update -y && $PKG install python3 -y
+    echo "Устанавливаю Python..."
+    $PKG update -y
+    $PKG install -y python
 fi
 
-# Проверка Git
+# Git
 if ! command -v git >/dev/null 2>&1; then
-    echo "Устанавливаем Git..."
-    $PKG install git -y
+    echo "Устанавливаю Git..."
+    $PKG install -y git
 fi
 
-# Проверка версии Python
-PY_VER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-if [[ $(echo "$PY_VER < 3.9" | bc) -eq 1 ]]; then
-    echo -e "${RED}Нужна Python 3.9+, у вас $PY_VER${NC}"
+# Проверка версии Python (без bc)
+PY_MAJOR=$(python3 -c "import sys; print(sys.version_info.major)")
+PY_MINOR=$(python3 -c "import sys; print(sys.version_info.minor)")
+
+if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 9 ]; }; then
+    echo -e "${RED}Нужен Python 3.9+, у вас ${PY_MAJOR}.${PY_MINOR}${NC}"
     exit 1
 fi
 
-# Клонирование проекта
+INSTALL_DIR="$HOME/Candy-Userbot"
+
+# Если проекта нет — клонируем
 if [ ! -d "$INSTALL_DIR/.git" ]; then
-    echo -e "${YELLOW}Клонирование Candy-Userbot...${NC}"
-    rm -rf "$INSTALL_DIR"
+    echo "Клонирование Candy-Userbot..."
     git clone https://github.com/Vital-Candy/Candy-Userbot.git "$INSTALL_DIR"
+
     if [ $? -ne 0 ]; then
-        echo -e "${RED}Не удалось клонировать репозиторий.${NC}"
+        echo -e "${RED}Ошибка клонирования репозитория.${NC}"
         exit 1
     fi
+else
+    echo "Candy-Userbot уже установлен."
 fi
 
 cd "$INSTALL_DIR" || exit 1
 
-# Установка зависимостей
 echo -e "${YELLOW}Установка зависимостей...${NC}"
-python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt
+pip install -r requirements.txt
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}Ошибка установки зависимостей.${NC}"
+    exit 1
+fi
 
 echo
 echo -e "${GREEN}✅ Установка завершена!${NC}"
