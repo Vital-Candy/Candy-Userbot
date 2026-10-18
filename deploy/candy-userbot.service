@@ -1,0 +1,32 @@
+# Установка (Linux, systemd, от обычного пользователя):
+#   1. Поправьте User, WorkingDirectory и путь к python ниже.
+#   2. sudo cp deploy/candy-userbot.service /etc/systemd/system/
+#   3. sudo systemctl daemon-reload && sudo systemctl enable --now candy-userbot
+#   4. journalctl -u candy-userbot -f
+#
+# Вход в аккаунт нужно сделать заранее вручную: python main.py --add-account
+[Unit]
+Description=Candy Userbot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=candy
+WorkingDirectory=/home/candy/candy
+ExecStart=/usr/bin/python3 main.py
+# Код 2 (ошибка настройки или входа) не перезапускаем: нужен человек.
+Restart=on-failure
+RestartPreventExitStatus=2
+RestartSec=10
+# Остановка: SIGTERM, затем 30 с на штатное завершение (шаги остановки имеют свои таймауты).
+KillSignal=SIGTERM
+TimeoutStopSec=30
+# Лишнего не даём.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
