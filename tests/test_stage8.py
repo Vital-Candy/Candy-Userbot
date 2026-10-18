@@ -153,7 +153,7 @@ class UpdateSettingsTests(unittest.TestCase):
 
     def test_defaults(self):
         s = self.load()
-        self.assertEqual((s.update_repo, s.update_branch, s.ui), ("Vital-Candy/Candy-Userbot", "main", "menu"))
+        self.assertEqual((s.update_repo, s.update_branch, s.ui), ("Vital-Candy/Candy-userbot", "main", "menu"))
         self.assertEqual(s.warnings, ())
 
     def test_valid_overrides(self):
@@ -162,7 +162,7 @@ class UpdateSettingsTests(unittest.TestCase):
 
     def test_invalid_values_fall_back_with_warnings(self):
         s = self.load(CANDY_UPDATE_REPO="evil.com/../x y", CANDY_UPDATE_BRANCH="a..b", CANDY_UI="gui")
-        self.assertEqual((s.update_repo, s.update_branch, s.ui), ("Vital-Candy/Candy-Userbot", "main", "menu"))
+        self.assertEqual((s.update_repo, s.update_branch, s.ui), ("Vital-Candy/Candy-userbot", "main", "menu"))
         self.assertEqual(len(s.warnings), 3)
 
 
@@ -236,7 +236,7 @@ class UpdaterTests(unittest.TestCase):
         fetch = FakeFetch("1.2.3")
         info = self.updater(fetch).check()
         self.assertEqual((info.local, info.remote, info.state), ("1.0.0", "1.2.3", "newer"))
-        self.assertIn("raw.githubusercontent.com/Vital-Candy/Candy-Userbot/main/core/version.py", fetch.urls[0])
+        self.assertIn("raw.githubusercontent.com/Vital-Candy/Candy-userbot/main/core/version.py", fetch.urls[0])
 
     def test_check_with_old_repo_layout_fails_clearly(self):
         with self.assertRaises(UpdateError) as ctx:

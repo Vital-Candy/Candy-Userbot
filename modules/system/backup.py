@@ -12,6 +12,19 @@ from core.reply import answer
 
 USAGE = "Использование: .backup create [id|@имя] | .backup list | .backup restore <файл.zip>"
 
+DETAILS = """\
+Резервные копии аккаунтов (сессия и профиль в zip-архиве, папка data/backups).
+
+.backup create — архив активного аккаунта
+.backup create <id|@имя> — архив другого сохранённого аккаунта
+.backup list — список архивов
+.backup restore <файл.zip> — восстановить аккаунт из архива (имя файла из .backup list)
+
+Восстановление не перезаписывает существующий аккаунт и не переключает на него: после него выполните .account use <id>.
+Архив содержит сессию Telegram, храните его в секрете.
+
+Права: только владелец аккаунта."""
+
 
 class BackupModule(Module):
     """Команда ``.backup``: создание, список и восстановление резервных копий аккаунтов."""
@@ -28,6 +41,7 @@ class BackupModule(Module):
             description="резервные копии аккаунтов",
             usage=".backup create [id|@имя] | list | restore <файл.zip>",
             priority=90,
+            details=DETAILS,
         )
 
     async def stop(self) -> None:

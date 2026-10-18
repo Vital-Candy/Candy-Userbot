@@ -13,8 +13,52 @@ from utils.links import message_link
 from utils.logger import logger
 from utils.text import escape_markdown
 
+GOTO_LIMIT = 10  # сколько ссылок показывает .goto
+NAME_RULES = (
+    "Имя метки: от 1 до 64 символов, без пробелов и символов Markdown, регистр не важен "
+    "(Идея и идея одна и та же метка)."
+)
+RELATED = "Связанные команды: .label, .labels, .unlabel, .goto."
+
+LABEL_DETAILS = f"""\
+Ставит метку на сообщение, чтобы потом быстро его найти. Использовать нужно ответом на нужное сообщение.
+
+.label <имя> — поставить метку (ответом на сообщение)
+
+{NAME_RULES}
+На одном сообщении может быть несколько разных меток, одну и ту же дважды поставить нельзя.
+Метки хранятся в базе userbot и принадлежат активному аккаунту.
+
+{RELATED}
+Права: только владелец аккаунта."""
+
+LABELS_DETAILS = f"""\
+Показывает все метки сообщения, на которое вы ответили.
+
+.labels — список меток сообщения (ответом на сообщение)
+
+{RELATED}
+Права: только владелец аккаунта."""
+
+GOTO_DETAILS = f"""\
+Находит сообщения по метке и присылает ссылки на них. Работает в любом чате.
+
+.goto <имя> — ссылки на сообщения с этой меткой (новые первыми, до {GOTO_LIMIT} штук)
+
+Для обычных групп Telegram ссылок на сообщения не даёт, тогда пишется только номер сообщения.
+
+{RELATED}
+Права: только владелец аккаунта."""
+
+UNLABEL_DETAILS = f"""\
+Снимает метку с сообщения. Использовать нужно ответом на это сообщение.
+
+.unlabel <имя> — удалить метку с сообщения (ответом на сообщение)
+
+{RELATED}
+Права: только владелец аккаунта."""
+
 NO_CHAT = "❌ Не удалось определить чат."
-GOTO_LIMIT = 10
 
 
 class LabelsModule(Module):
@@ -29,30 +73,34 @@ class LabelsModule(Module):
         dispatcher.register_command(
             "label",
             self.label_command,
-            description="поставить метку на сообщение в reply",
+            description="поставить метку на сообщение (ответом)",
             usage=".label <имя>",
             priority=50,
+            details=LABEL_DETAILS,
         )
         dispatcher.register_command(
             "labels",
             self.labels_command,
-            description="показать метки сообщения в reply",
+            description="показать метки сообщения (ответом)",
             usage=".labels",
             priority=50,
+            details=LABELS_DETAILS,
         )
         dispatcher.register_command(
             "goto",
             self.goto_command,
-            description="ссылка на сообщение с меткой",
+            description="найти сообщения по метке",
             usage=".goto <имя>",
             priority=50,
+            details=GOTO_DETAILS,
         )
         dispatcher.register_command(
             "unlabel",
             self.unlabel_command,
-            description="удалить метку с сообщения в reply",
+            description="снять метку с сообщения (ответом)",
             usage=".unlabel <имя>",
             priority=50,
+            details=UNLABEL_DETAILS,
         )
 
     async def stop(self) -> None:

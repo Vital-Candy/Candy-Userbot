@@ -20,6 +20,18 @@ USAGE = (
     ".perm grant <id | ответом> <trusted|admin>\n"
     ".perm revoke <id | ответом> [trusted|admin]"
 )
+DETAILS = """\
+Права других пользователей. Уровни: user (по умолчанию, без прав) < trusted (доверенный) < admin (администратор: .update, .plugin, .perm и другие закрытые команды). Владелец аккаунта всегда admin, его права менять нельзя.
+
+.perm list — все выданные права
+.perm list <id> — уровень и права одного пользователя
+.perm grant <id> <trusted|admin> — выдать уровень
+.perm revoke <id> — снять все права
+.perm revoke <id> <trusted|admin> — снять один уровень
+
+Вместо ID можно ответить командой на сообщение человека: .perm grant trusted. Имена @username не поддерживаются, нужен числовой ID.
+
+Права: администратор (владелец аккаунта им является всегда)."""
 GRANTABLE = (PermissionLevel.TRUSTED, PermissionLevel.ADMIN)
 
 
@@ -35,8 +47,9 @@ class PermissionsModule(Module):
             "perm",
             self.perm_command,
             description="права доступа пользователей",
-            usage=".perm list | grant | revoke",
+            usage=".perm list [id] | grant <id> <уровень> | revoke <id> [уровень]",
             priority=40,
+            details=DETAILS,
             # Команда управляет доступом, поэтому только ADMIN (владелец всегда им является).
             filters=(require(self.app, PermissionLevel.ADMIN),),
         )

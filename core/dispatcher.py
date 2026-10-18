@@ -43,6 +43,7 @@ class Command:
     priority: int = 0
     filters: tuple[FilterCallback, ...] = ()
     allow_incoming: bool = False
+    details: str = ""  # подробная справка для ``.help <команда>`` (необязательна)
 
 
 # Команда, которую сейчас выполняет текущая задача: (событие, разобранная команда).
@@ -149,8 +150,11 @@ class Dispatcher:
         priority: int = 0,
         filters: tuple[FilterCallback, ...] = (),
         allow_incoming: bool = False,
+        details: str = "",
     ) -> Command:
-        """``allow_incoming``: команду могут вызывать и другие пользователи.
+        """``details``: подробное описание (аргументы, примеры) для ``.help <команда>``.
+
+        ``allow_incoming``: команду могут вызывать и другие пользователи.
 
         По умолчанию команды выполняются только из собственных сообщений. Открытая
         команда обязана иметь фильтры (например ``require(app, "trusted")``), иначе
@@ -167,7 +171,8 @@ class Dispatcher:
                 f"Команда .{normalized} открыта для других пользователей без фильтров доступа"
             )
         command = Command(
-            normalized, callback, description, usage, priority, tuple(filters), allow_incoming
+            normalized, callback, description, usage, priority, tuple(filters), allow_incoming,
+            details.strip(),
         )
         self.commands[normalized] = command
         return command

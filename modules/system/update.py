@@ -15,6 +15,19 @@ from utils.logger import logger
 USAGE = "Использование:\n.update — проверить и установить обновление\n.update check — только проверить"
 
 
+DETAILS = """\
+Обновление userbot из репозитория GitHub (по умолчанию ветка main, сменить можно в .env: CANDY_UPDATE_REPO и CANDY_UPDATE_BRANCH).
+
+.update — проверить версию и, если есть новая, скачать и установить; после установки userbot сам перезапустится
+.update check — только проверить, ничего не устанавливая
+
+Версию понижать нельзя: если на сервере версия ниже или равна вашей, обновления не будет.
+Не затрагиваются: data, logs, plugins, .env и ваш logo.txt. Прежние файлы сохраняются в data/update; если установка не удалась, всё возвращается назад.
+Если изменился requirements.txt, в ответе будет напоминание выполнить pip install -r requirements.txt.
+
+Права: администратор (владелец аккаунта им является всегда)."""
+
+
 def describe(info) -> str:
     """Текст о результате проверки версии по ``info.state`` (newer/current/иначе: на сервере ниже)."""
     if info.state == "newer":
@@ -42,6 +55,7 @@ class UpdateModule(Module):
             description="обновление из GitHub",
             usage=".update [check]",
             priority=90,
+            details=DETAILS,
             filters=(require(self.app, PermissionLevel.ADMIN),),
         )
 

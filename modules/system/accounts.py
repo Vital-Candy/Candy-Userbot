@@ -11,6 +11,18 @@ from core.reply import answer
 
 USAGE = "Использование: .account [list] | .account use <id|@имя>"
 
+DETAILS = """\
+Показывает сохранённые Telegram-аккаунты и переключает активный. Одновременно работает один аккаунт.
+
+.account — список аккаунтов (● активный, ○ остальные)
+.account list — то же самое
+.account use <id|@имя> — сделать аккаунт активным; userbot перезапустится уже под ним
+
+Аккаунт можно указать числовым ID или @username (как в списке).
+Новый аккаунт добавляют в терминале: python main.py --add-account
+
+Права: только владелец аккаунта."""
+
 
 class AccountsModule(Module):
     """Команда ``.account``: список аккаунтов и переключение активного."""
@@ -27,6 +39,7 @@ class AccountsModule(Module):
             description="аккаунты: список и переключение",
             usage=".account [list | use <id|@имя>]",
             priority=90,
+            details=DETAILS,
         )
 
     async def stop(self) -> None:

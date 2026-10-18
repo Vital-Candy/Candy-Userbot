@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -164,12 +165,99 @@ class PublishScriptTests(unittest.TestCase):
         result = self.run_publish(extra_env={"PATH": f"{wrapper_dir}{os.pathsep}{self.bin}{os.pathsep}{os.environ['PATH']}"})
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         text = calls.read_text(encoding="utf-8")
-        self.assertIn("repo create Vital-Candy/Candy-Userbot --public", text)
+        self.assertIn("repo create Vital-Candy/Candy-userbot --public", text)
         tags = subprocess.run(
             [GIT, "--git-dir", str(remote), "tag"], capture_output=True, text=True, check=True,
         ).stdout.split()
         self.assertEqual(len(tags), 1)
         self.assertTrue(tags[0].startswith("v"))
+
+    def make_remote(self, version: str, *, author: str = "Candy <12345+Tester@users.noreply.github.com>") -> Path:
+        """Bare-репозиторий с «уже опубликованной» версией и устаревшим файлом."""
+        seed = self.tmp / "seed"
+        (seed / "core").mkdir(parents=True)
+        (seed / "core" / "version.py").write_text(f'CORE_VERSION = "{version}"\n', encoding="utf-8")
+        (seed / "old.txt").write_text("устарел", encoding="utf-8")
+        name, email = author.split(" <")
+        env = {**os.environ, "GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email.rstrip(">"),
+               "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email.rstrip(">"),
+               "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
+        for command in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "first"]):
+            subprocess.run(["git", *command], cwd=seed, env=env, check=True, capture_output=True)
+        remote = self.tmp / "remote.git"
+        subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(remote)], check=True, capture_output=True)
+        return remote
+
+    def stub_gh_for(self, remote: Path) -> None:
+        """gh: репозиторий «есть», а ``repo clone`` клонирует наш bare-репозиторий."""
+        _write_exec(
+            self.bin / "gh",
+            f'#!/bin/sh\nif [ "$1 $2" = "repo view" ]; then exit 0; fi\n'
+            f'if [ "$1 $2" = "repo clone" ]; then exec {GIT} clone -q "{remote}" "$4"; fi\nexit 9\n',
+        )
+
+    def test_release_adds_one_commit_on_top_and_pushes_tag(self) -> None:
+        remote = self.make_remote("0.0.1")
+        self.stub_gh_for(remote)
+        result = self.run_publish("--release")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        count = subprocess.run([GIT, "--git-dir", str(remote), "rev-list", "--count", "main"],
+                               capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(count, "2")  # старый коммит остался, добавлен один новый
+        files = subprocess.run([GIT, "--git-dir", str(remote), "ls-tree", "-r", "--name-only", "main"],
+                               capture_output=True, text=True, check=True).stdout.split("\n")
+        self.assertIn("main.py", files)
+        self.assertNotIn("old.txt", files)  # удалённое в проекте исчезло и из репозитория
+        authors = subprocess.run([GIT, "--git-dir", str(remote), "log", "--format=%an <%ae>|%cn <%ce>", "main"],
+                                 capture_output=True, text=True, check=True).stdout.split("\n")
+        self.assertEqual({a for line in authors if line for a in line.split("|")},
+                         {"Candy <12345+Tester@users.noreply.github.com>"})
+        tags = subprocess.run([GIT, "--git-dir", str(remote), "tag"], capture_output=True, text=True, check=True).stdout.split()
+        self.assertEqual(len(tags), 1)
+
+    def test_release_dry_run_pushes_nothing(self) -> None:
+        remote = self.make_remote("0.0.1")
+        self.stub_gh_for(remote)
+        self.assertEqual(self.run_publish("--release", "--dry-run").returncode, 0)
+        count = subprocess.run([GIT, "--git-dir", str(remote), "rev-list", "--count", "main"],
+                               capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(count, "1")
+
+    def test_release_requires_higher_version(self) -> None:
+        current = re.search(r'^CORE_VERSION = "([^"]+)"', (self.src / "core" / "version.py").read_text(encoding="utf-8"), re.M).group(1)
+        for published in (current, "99.0.0"):
+            with self.subTest(published=published):
+                shutil.rmtree(self.tmp / "seed", ignore_errors=True)
+                shutil.rmtree(self.tmp / "remote.git", ignore_errors=True)
+                shutil.rmtree(self.work, ignore_errors=True)
+                remote = self.make_remote(published)
+                self.stub_gh_for(remote)
+                result = self.run_publish("--release")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("не выше опубликованной", result.stderr)
+
+    def test_release_refuses_foreign_author_in_history(self) -> None:
+        remote = self.make_remote("0.0.1", author="Реальное Имя <real@" + "exam" + "ple.org>")
+        self.stub_gh_for(remote)
+        result = self.run_publish("--release")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("неожиданный автор", result.stderr)
+
+    def test_release_without_changes_is_refused(self) -> None:
+        remote = self.make_remote("0.0.1")
+        self.stub_gh_for(remote)
+        # Приём: публикуем тот же проект дважды с разрешением той же версии.
+        self.assertEqual(self.run_publish("--release").returncode, 0)
+        shutil.rmtree(self.work)
+        result = self.run_publish("--release", extra_env={"PUBLISH_ALLOW_SAME_VERSION": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("нет изменений", result.stderr)
+
+    def test_release_needs_existing_repository(self) -> None:
+        _write_exec(self.bin / "gh", "#!/bin/sh\n[ \"$1 $2\" = \"repo view\" ] && exit 1\nexit 9\n")
+        result = self.run_publish("--release")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("не найден", result.stderr)
 
     def test_help_and_bad_argument(self) -> None:
         self.assertEqual(self.run_publish("--help").returncode, 0)

@@ -19,6 +19,20 @@ USAGE = (
     ".plugin [list]\n"
     ".plugin load|unload|reload|info <имя>"
 )
+DETAILS = """\
+Управление плагинами: файлами plugins/<имя>.py. Папка plugins/ не обновляется и не публикуется, там ваши расширения.
+
+.plugin — список плагинов и их состояние
+.plugin list — то же самое
+.plugin load <имя> — загрузить плагин
+.plugin unload <имя> — выгрузить (его команды и задачи снимаются)
+.plugin reload <имя> — перезагрузить после правки файла
+.plugin info <имя> — версия, описание, зависимости, число команд, обработчиков и задач, последняя ошибка
+
+Имя: латинские буквы, цифры, _ и -.
+Плагины не изолированы: они выполняют код с теми же правами, что и userbot, ставьте только свои или проверенные.
+
+Права: администратор (владелец аккаунта им является всегда)."""
 NAME = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 ACTIONS = ("load", "unload", "reload", "info")
 
@@ -38,6 +52,7 @@ class PluginsModule(Module):
             description="плагины: список, загрузка, выгрузка",
             usage=".plugin [list | load | unload | reload | info <имя>]",
             priority=90,
+            details=DETAILS,
             filters=(require(self.app, PermissionLevel.ADMIN),),
         )
 

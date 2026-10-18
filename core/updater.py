@@ -31,7 +31,7 @@ from core.errors import UserError
 from core.version import CORE_VERSION, parse_version
 from utils.logger import logger
 
-DEFAULT_REPO = "Vital-Candy/Candy-Userbot"
+DEFAULT_REPO = "Vital-Candy/Candy-userbot"
 DEFAULT_BRANCH = "main"
 
 # Белый список хостов: защита от подмены адреса и переадресации на сторонний сервер.

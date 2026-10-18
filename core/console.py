@@ -149,19 +149,13 @@ class ConsoleManager:
         command, args = parts[0].lower(), parts[1:]
         if command in {"help", "?"}:
             return self._print(
-                "help | status | health | modules | tasks | plugins | plugin load <name> | "
+                "help | status [all] | plugins | plugin load <name> | "
                 "plugin unload <name> | plugin reload <name> | plugin info <name> | account list | "
                 "account use <id|@name> | backup create [id|@name] | backup list | "
                 "backup restore <file> | stop"
             )
         if command == "status":
-            return self._status()
-        if command == "health":
-            return self._print("\n".join(self.app.health().lines()))
-        if command == "modules":
-            return self._modules()
-        if command == "tasks":
-            return self._tasks()
+            return self._status(args)
         if command == "plugins":
             return self._plugins()
         if command == "plugin":
@@ -176,22 +170,15 @@ class ConsoleManager:
             return self._print("Userbot stopped.")
         return self._print(f"Неизвестная команда: {command}")
 
-    def _status(self) -> str:
-        """Короткая сводка: сколько модулей запущено и плагинов загружено."""
-        ms, ps = self.app.modules.states(), self.app.plugins.states()
-        return self._print(
-            f"modules={sum(s.started for s in ms)}/{len(ms)}, "
-            f"plugins={sum(s.loaded for s in ps)}/{len(ps)}"
-        )
-
-    def _modules(self) -> str:
-        """Список модулей и их состояние."""
-        text = "\n".join(module_lines(self.app)) or "Модулей нет."
+    def _status(self, args: list[str]) -> str:
+        """``status``: сводка здоровья; ``status all``: ещё модули и фоновые задачи."""
+        if args not in ([], ["all"]):
+            return self._print("Использование: status [all]")
+        text = "\n".join(self.app.health().lines())
+        if args == ["all"]:
+            text += "\n\nМодули:\n" + ("\n".join(module_lines(self.app)) or "нет")
+            text += "\n\nФоновые задачи:\n" + ("\n".join(task_lines(self.app)) or "нет")
         return self._print(text)
-
-    def _tasks(self) -> str:
-        """Список фоновых задач."""
-        return self._print("\n".join(task_lines(self.app)) or "Фоновых задач нет.")
 
     def _plugins(self) -> str:
         """Список плагинов и их состояние."""

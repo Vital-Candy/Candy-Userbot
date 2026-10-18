@@ -41,6 +41,7 @@ class ConsoleThreadTests(unittest.IsolatedAsyncioTestCase):
         app = SimpleNamespace(
             modules=SimpleNamespace(states=lambda: []),
             plugins=SimpleNamespace(states=lambda: []),
+            health=lambda: SimpleNamespace(lines=lambda: ["HEALTH-OK"]),
         )
         console = ConsoleManager(app, ui="console")
         out = io.StringIO()
@@ -50,13 +51,13 @@ class ConsoleThreadTests(unittest.IsolatedAsyncioTestCase):
             ), contextlib.redirect_stdout(out):
                 await console.start()
                 for _ in range(100):
-                    if "modules=0/0" in out.getvalue():
+                    if "HEALTH-OK" in out.getvalue():
                         break
                     await asyncio.sleep(0.01)
                 started = time.monotonic()
                 await asyncio.wait_for(console.stop(), timeout=1)
                 self.assertLess(time.monotonic() - started, 1)
-            self.assertIn("modules=0/0, plugins=0/0", out.getvalue())
+            self.assertIn("HEALTH-OK", out.getvalue())
             self.assertIsNone(console._task)
         finally:
             release.set()

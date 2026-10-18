@@ -35,7 +35,7 @@ DEFAULT_STOP_TIMEOUT = 20.0
 # Обновление из GitHub (.update). Репозиторий в формате владелец/имя.
 ENV_UPDATE_REPO = "CANDY_UPDATE_REPO"  # откуда брать обновления: владелец/имя
 ENV_UPDATE_BRANCH = "CANDY_UPDATE_BRANCH"  # ветка репозитория
-DEFAULT_UPDATE_REPO = "Vital-Candy/Candy-Userbot"
+DEFAULT_UPDATE_REPO = "Vital-Candy/Candy-userbot"
 DEFAULT_UPDATE_BRANCH = "main"
 
 # Вид терминала: menu (экран с меню) или console (строка команд candy>).

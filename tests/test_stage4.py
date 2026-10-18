@@ -469,7 +469,7 @@ class StatusTests(unittest.IsolatedAsyncioTestCase):
             async def edit(text):
                 edits.append(text)
 
-            await app.dispatcher.dispatch_command(SimpleNamespace(raw_text=".status", edit=edit))
+            await app.dispatcher.dispatch_command(SimpleNamespace(raw_text=".status all", edit=edit))
         finally:
             await background.stop_all()
         text = edits[-1]
@@ -487,21 +487,31 @@ class StatusTests(unittest.IsolatedAsyncioTestCase):
         background = BackgroundManager()
         background.register("t", lambda: None, interval=1)
         app = SimpleNamespace(modules=modules, background=background, plugins=SimpleNamespace(states=lambda: []))
+        app.health = lambda: SimpleNamespace(lines=lambda: ["Состояние: ok"])
         console = ConsoleManager(app)
         await modules.start_all()
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertIn("✅ ok (обязательный)", await console.execute("modules"))
-            self.assertIn("STOPPED", await console.execute("tasks"))
-            self.assertIn("tasks", await console.execute("help"))
+            short = await console.execute("status")
+            self.assertIn("Состояние: ok", short)
+            self.assertNotIn("обязательный", short)  # кратко: без списка модулей
+            full = await console.execute("status all")
+            self.assertIn("✅ ok (обязательный)", full)
+            self.assertIn("STOPPED", full)
+            self.assertIn("Использование", await console.execute("status bogus"))
+            help_text = await console.execute("help")
+            self.assertIn("status [all]", help_text)
+            self.assertNotIn("health", help_text)
+            self.assertIn("Неизвестная команда", await console.execute("health"))
 
-    async def test_console_tasks_empty(self):
+    async def test_console_status_all_without_tasks(self):
         app = SimpleNamespace(
             modules=ModuleManager(SimpleNamespace()),
             background=BackgroundManager(),
             plugins=SimpleNamespace(states=lambda: []),
+            health=lambda: SimpleNamespace(lines=lambda: ["Состояние: ok"]),
         )
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertIn("нет", await ConsoleManager(app).execute("tasks"))
+            self.assertIn("Фоновые задачи:\nнет", await ConsoleManager(app).execute("status all"))
 
 
 class FailedSummaryTests(unittest.TestCase):

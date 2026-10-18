@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 # Публикация Candy Userbot на GitHub без личных данных.
 #
-#   bash tools/publish.sh [--dry-run] [владелец/репозиторий]
+#   bash tools/publish.sh [--dry-run] [владелец/репозиторий]             первая публикация
+#   bash tools/publish.sh --release [--dry-run] [владелец/репозиторий]   выпуск обновления
 #
 # Скрипт сам ничего не удаляет и не переписывает чужую историю. Он:
 #   1. копирует проект в НОВУЮ папку (без .git, data/, logs/, .env, кэша);
-#   2. создаёт там свежий git-репозиторий с анонимным автором (имя Candy, адрес noreply);
+#   2. задаёт анонимного автора (имя Candy, адрес noreply GitHub);
 #   3. проверяет, что в публикуемых файлах нет секретов, адресов почты и запретных слов;
-#   4. создаёт репозиторий на GitHub и отправляет код и тег версии.
-# Если репозиторий уже существует, скрипт останавливается: удалите его вручную на сайте
-# (Settings, Danger Zone), иначе в старой истории останутся прежние коммиты.
+#   4. отправляет код и тег версии.
+# Первая публикация: создаёт свежий репозиторий с одним коммитом. Если репозиторий уже
+# существует, скрипт останавливается: удалите его вручную на сайте (Settings, Danger Zone),
+# иначе в старой истории останутся прежние коммиты.
+# Выпуск обновления (--release): скачивает уже опубликованный репозиторий, заменяет его
+# файлы текущими и добавляет ОДИН новый коммит сверху (история не переписывается). Версия
+# CORE_VERSION должна быть выше опубликованной, иначе .update обновления не увидит.
 #
-# --dry-run: выполнить всё, кроме создания репозитория и отправки.
+# --dry-run: выполнить всё, кроме отправки (и создания репозитория).
 #
 # Запретные слова (например, настоящее имя) скрипт читает из файла ~/.candy-forbidden:
 # по одному регулярному выражению в строке, регистр не важен. Сами слова нигде в проекте
@@ -22,6 +27,7 @@
 #   PUBLISH_FORBIDDEN_FILE        другой путь к файлу запретных слов
 #   PUBLISH_WORK                  своя рабочая папка (должна не существовать)
 #   PUBLISH_ALLOW_NO_FORBIDDEN=1  не требовать файл запретных слов (не рекомендуется)
+#   PUBLISH_ALLOW_SAME_VERSION=1  при --release не требовать повышения версии
 
 set -euo pipefail
 
@@ -29,22 +35,24 @@ set -euo pipefail
 export LC_ALL="$(locale -a 2>/dev/null | grep -i -m1 -E '^(c|en_us)\.utf-?8$' || echo C)"
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO="Vital-Candy/Candy-Userbot"
+REPO="Vital-Candy/Candy-userbot"
 DRY=0
+MODE=publish
 
 die() { printf 'Ошибка: %s\n' "$*" >&2; exit 1; }
 say() { printf '%s\n' "$*"; }
 
 usage() {
-    sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "${BASH_SOURCE[0]}"
 }
 
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY=1 ;;
+        --release) MODE=release ;;
         -h|--help) usage; exit 0 ;;
         */*) REPO="$arg" ;;
-        *) die "неизвестный аргумент: $arg (нужно --dry-run или владелец/репозиторий)" ;;
+        *) die "неизвестный аргумент: $arg (нужно --dry-run, --release или владелец/репозиторий)" ;;
     esac
 done
 
@@ -71,7 +79,26 @@ VERSION="$(sed -n 's/^CORE_VERSION *= *"\([^"]*\)".*/\1/p' "$SRC/core/version.py
 # --- Рабочая папка (всегда новая) ----------------------------------------------------
 WORK="${PUBLISH_WORK:-$HOME/candy-publish-$(date +%Y%m%d-%H%M%S)}"
 [ ! -e "$WORK" ] || die "папка $WORK уже существует; удалите её или укажите другую (PUBLISH_WORK)."
-mkdir -p "$WORK"
+
+if [ "$MODE" = release ]; then
+    # Выпуск: берём опубликованную историю и добавляем в неё один коммит.
+    command -v gh >/dev/null 2>&1 || die "не найден gh (pkg install gh)."
+    gh repo view "$REPO" >/dev/null 2>&1 || die "репозиторий $REPO не найден. Первую публикацию делайте без --release."
+    say "Скачиваю опубликованный репозиторий $REPO в $WORK..."
+    gh repo clone "$REPO" "$WORK" -- -q || die "не удалось скачать $REPO."
+    OLD_VERSION="$(git -C "$WORK" show HEAD:core/version.py 2>/dev/null | sed -n 's/^CORE_VERSION *= *"\([^"]*\)".*/\1/p' | head -n 1)"
+    # Версия обязана расти: иначе .update у пользователей ничего не найдёт.
+    if [ "${PUBLISH_ALLOW_SAME_VERSION:-0}" != "1" ] && [ -n "$OLD_VERSION" ]; then
+        newest="$(printf '%s\n%s\n' "$OLD_VERSION" "$VERSION" | sort -V | tail -n 1)"
+        if [ "$OLD_VERSION" = "$VERSION" ] || [ "$newest" != "$VERSION" ]; then
+            die "версия $VERSION не выше опубликованной ($OLD_VERSION). Поднимите CORE_VERSION в core/version.py."
+        fi
+    fi
+    # Старые файлы убираем, чтобы удалённые в проекте файлы исчезли и из репозитория.
+    find "$WORK" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+else
+    mkdir -p "$WORK"
+fi
 
 say "Копирую проект в $WORK (без .git, data, logs, .env, кэша)..."
 (
@@ -83,8 +110,10 @@ say "Копирую проект в $WORK (без .git, data, logs, .env, кэш
 ) | tar -xf - -C "$WORK"
 
 cd "$WORK"
-git init -q
-git checkout -q -b main
+if [ "$MODE" = publish ]; then
+    git init -q
+    git checkout -q -b main
+fi
 git config user.name "$AUTHOR_NAME"
 git config user.email "$AUTHOR_EMAIL"
 git config commit.gpgsign false
@@ -144,6 +173,9 @@ fi
 say "Проверки пройдены: секретов, почты и запретных слов нет."
 
 # --- Коммит и тег --------------------------------------------------------------------
+if [ "$MODE" = release ] && git diff --cached --quiet; then
+    die "в проекте нет изменений относительно опубликованной версии. Нечего выпускать."
+fi
 git commit -q -m "Candy Userbot ${VERSION}"
 git tag "v${VERSION}"
 
@@ -159,6 +191,15 @@ say "Автор коммита: $expected"
 if [ "$DRY" -eq 1 ]; then
     say ""
     say "Пробный запуск: ничего не отправлено. Готовая копия: $WORK"
+    exit 0
+fi
+
+if [ "$MODE" = release ]; then
+    say "Отправляю обновление ${VERSION} в $REPO..."
+    git push -q origin main
+    git push -q origin "v${VERSION}"
+    say ""
+    say "Готово: версия ${VERSION} опубликована. Пользователи получат её командой .update."
     exit 0
 fi
 

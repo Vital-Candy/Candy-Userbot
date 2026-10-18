@@ -8,13 +8,13 @@
 # входа в Telegram: вход выполняется при первом запуске ./run.sh.
 #
 # Переменные (необязательные):
-#   CANDY_DIR   куда ставить проект (по умолчанию ~/Candy-Userbot)
+#   CANDY_DIR   куда ставить проект (по умолчанию ~/userbot)
 #   CANDY_REPO  адрес репозитория для git clone
 
 set -u
 
-CANDY_DIR="${CANDY_DIR:-$HOME/Candy-Userbot}"
-CANDY_REPO="${CANDY_REPO:-https://github.com/Vital-Candy/Candy-Userbot.git}"
+CANDY_DIR="${CANDY_DIR:-$HOME/userbot}"
+CANDY_REPO="${CANDY_REPO:-https://github.com/Vital-Candy/Candy-userbot.git}"
 MIN_PY_MAJOR=3
 MIN_PY_MINOR=11
 

@@ -57,7 +57,7 @@ CandyUserbot/
 │   └── errors.py
 ├── accounts/             # account, manager, auth, backup, migration, control (этап 2)
 ├── modules/
-│   ├── system/           # status/health, heartbeat, accounts (.account), backup (.backup), plugins (.plugin), update (.update)
+│   ├── system/           # status, heartbeat, accounts (.account), backup (.backup), plugins (.plugin), update (.update)
 │   ├── storage/          # .label, .labels, .goto, .unlabel
 │   └── permissions/
 ├── storage/              # database, models, labels, permissions, service, migrations/

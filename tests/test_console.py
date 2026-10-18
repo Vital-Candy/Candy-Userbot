@@ -34,6 +34,7 @@ class ConsoleApp:
         self.account_control = SimpleNamespace(describe=lambda: "👤 acc")
         self.events_log = fx.app.events_log
         self.ticks = fx.app.ticks
+        self.health = lambda: SimpleNamespace(lines=lambda: ["Состояние: ok"])
 
 
 class TtyTests(unittest.IsolatedAsyncioTestCase):
@@ -89,7 +90,7 @@ class ReaderThreadTests(unittest.IsolatedAsyncioTestCase):
         text = out.getvalue()
         self.assertIn("plugin info", text)  # help
         self.assertIn("Неизвестная команда: bogus", text)
-        self.assertIn("modules=", text)  # status
+        self.assertIn("Состояние: ok", text)  # status
         await console.stop()
 
     async def test_stop_does_not_wait_for_input(self):

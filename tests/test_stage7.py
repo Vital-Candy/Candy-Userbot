@@ -311,7 +311,7 @@ class AppLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(app.storage.database.is_open)
             self.assertEqual(app.lifecycle.state, STOPPED)
 
-    async def test_health_command_is_registered(self):
+    async def test_status_command_replaces_health(self):
         client = s4.FakeClient()
         with tempfile.TemporaryDirectory() as tmp:
             app = self.make_app(tmp, [], client)
@@ -324,12 +324,14 @@ class AppLifecycleTests(unittest.IsolatedAsyncioTestCase):
             async def edit(text):
                 edits.append(text)
 
-            await app.dispatcher.dispatch_command(SimpleNamespace(raw_text=".health", edit=edit))
+            await app.dispatcher.dispatch_command(SimpleNamespace(raw_text=".status", edit=edit))
             self.assertIn("Состояние", edits[-1])
+            self.assertNotIn("Модули:", edits[-1])  # кратко: подробности только в .status all
+            await app.dispatcher.dispatch_command(SimpleNamespace(raw_text=".status all", edit=edit))
+            self.assertIn("Модули:", edits[-1])
+            self.assertNotIn("health", app.dispatcher.commands)  # .health больше нет
             await module.stop()
-            self.assertFalse(app.dispatcher.has_command("health")) if hasattr(
-                app.dispatcher, "has_command"
-            ) else None
+            self.assertNotIn("status", app.dispatcher.commands)
 
 
 # ---------------------------------------------------------------- file logs

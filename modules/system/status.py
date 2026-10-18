@@ -1,4 +1,4 @@
-"""Модуль команд .status и .health (без аргументов, отдельный фильтр прав не задан).
+"""Модуль команды .status (одна команда состояния вместо прежних .status и .health).
 
 Вызывает владелец аккаунта; данные берутся из app.health() и core/summary.py.
 """
@@ -8,54 +8,62 @@ from core.module import Module
 from core.reply import answer
 from core.summary import module_lines, task_lines
 
+USAGE = "Использование: .status [all]"
+
+DETAILS = """\
+Показывает, всё ли в порядке: общее состояние (ok, degraded, down), связь с Telegram, базу, число модулей, плагинов и фоновых задач, а при проблемах их список.
+
+.status — короткая сводка
+.status all — то же и подробно: каждый модуль (обязательный или нет, причина сбоя) и каждая фоновая задача (запуски, сбои, последняя ошибка)
+
+Права: только владелец аккаунта."""
+
 
 class StatusModule(Module):
-    """Команды ``.status`` и ``.health``: состояние модулей, задач и краткий отчёт о здоровье."""
+    """Команда ``.status``: краткая сводка здоровья, а с ``all`` ещё модули и фоновые задачи."""
 
     name = "system.status"
     required = True  # системный модуль: сбой запуска останавливает userbot
     description = "Системная команда .status"
 
     async def start(self) -> None:
-        """Регистрирует команды ``.status`` и ``.health``."""
+        """Регистрирует команду ``.status``."""
         self.app.dispatcher.register_command(
             "status",
             self.status_command,
-            description="состояние userbot",
-            usage=".status",
+            description="состояние userbot (all: подробно)",
+            usage=".status [all]",
             priority=100,
-        )
-        self.app.dispatcher.register_command(
-            "health",
-            self.health_command,
-            description="краткий отчёт о здоровье userbot",
-            usage=".health",
-            priority=100,
+            details=DETAILS,
         )
 
     async def stop(self) -> None:
-        """Снимает регистрацию команд ``.status`` и ``.health``."""
+        """Снимает регистрацию команды ``.status``."""
         self.app.dispatcher.unregister_command("status")
-        self.app.dispatcher.unregister_command("health")
-
-    async def health_command(self, event) -> None:
-        """``.health``: краткий отчёт о здоровье."""
-        await answer(event, "🩺 Candy Userbot\n" + "\n".join(self.app.health().lines()))
 
     async def status_command(self, event) -> None:
-        """``.status``: здоровье, число запущенных модулей и список фоновых задач."""
+        """``.status``: краткая сводка; ``.status all``: ещё список модулей и задач."""
+        command = self.app.dispatcher.get_command(event)
+        args = [item.lower() for item in (command.args if command else [])]
+        if args not in ([], ["all"]):
+            await answer(event, USAGE)
+            return
+        text = "🍬 Candy Userbot\n" + "\n".join(self.app.health().lines())
+        if args == ["all"]:
+            text += "\n\n" + self.details_text()
+        await answer(event, text)
+
+    def details_text(self) -> str:
+        """Подробная часть для ``.status all``: модули и фоновые задачи."""
         states = self.app.modules.states()
         started = sum(state.started for state in states)
         failed = sum(state.failed for state in states)
         tasks = task_lines(self.app)
         text = (
-            "🍬 Candy Userbot\n"
-            + "\n".join(self.app.health().lines())
-            + "\n\n"
             f"Модули: {started}/{len(states)} запущено, ошибок запуска: {failed}\n"
             + "\n".join(module_lines(self.app))
             + f"\n\nФоновые задачи: {len(tasks)}"
         )
         if tasks:
             text += "\n" + "\n".join(tasks)
-        await answer(event, text)
+        return text
