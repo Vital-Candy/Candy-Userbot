@@ -504,7 +504,7 @@ class LazyRawTests(unittest.IsolatedAsyncioTestCase):
 
     def test_raw_is_not_registered_without_raw_handlers(self):
         self.bridge.register()
-        self.assertEqual(len(self.client.active()), 4)
+        self.assertEqual(len(self.client.active()), 1)  # только новые сообщения
         self.assertEqual(self.raw_active(), [])
 
     def test_raw_follows_raw_handlers(self):
@@ -539,7 +539,37 @@ class LazyRawTests(unittest.IsolatedAsyncioTestCase):
     def test_register_is_idempotent(self):
         self.bridge.register()
         self.bridge.register()
-        self.assertEqual(len(self.client.active()), 4)
+        self.assertEqual(len(self.client.active()), 1)
+
+    def test_edited_deleted_callback_follow_their_handlers(self):
+        self.bridge.register()
+        for event_type in ("edited", "deleted", "callback"):
+            with self.subTest(event_type=event_type):
+                before = len(self.client.active())
+                first = self.dispatcher.register(event_type, lambda e: None)
+                second = self.dispatcher.register(event_type, lambda e: None)
+                self.assertEqual(len(self.client.active()), before + 1)  # одна подписка на тип
+                self.dispatcher.unregister(first)
+                self.assertEqual(len(self.client.active()), before + 1)
+                self.dispatcher.unregister(second)
+                self.assertEqual(len(self.client.active()), before)
+
+    def test_existing_handlers_of_every_type_are_picked_up_on_register(self):
+        for event_type in ("edited", "deleted", "callback", "raw"):
+            self.dispatcher.register(event_type, lambda e: None)
+        self.bridge.register()
+        self.assertEqual(len(self.client.active()), 5)
+        self.bridge.unregister()
+        self.assertEqual(self.client.active(), [])
+
+    async def test_edited_deleted_callback_events_reach_handlers(self):
+        got = []
+        for event_type in ("edited", "deleted", "callback"):
+            self.dispatcher.register(event_type, lambda e, t=event_type: got.append((t, e)))
+        await self.bridge._edited("a")
+        await self.bridge._deleted("b")
+        await self.bridge._callback("c")
+        self.assertEqual(got, [("edited", "a"), ("deleted", "b"), ("callback", "c")])
 
     async def test_raw_events_reach_handlers(self):
         got = []

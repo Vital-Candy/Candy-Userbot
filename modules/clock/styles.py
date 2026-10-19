@@ -92,6 +92,7 @@ STYLES: tuple[Style, ...] = tuple(
     Style(number, title, render) for number, (title, render) in enumerate(_DEFINITIONS, start=1)
 )
 STYLE_COUNT = len(STYLES)
+MAX_CLOCK_CHARS = 12  # длиннейшая запись часов (проверяется тестом), в символах
 
 
 def get_style(number: int) -> Style:
@@ -118,31 +119,48 @@ def max_length(number: int) -> int:
     return max(utf16_len(style.render(h, m)) for h in range(24) for m in range(60))
 
 
-@lru_cache(maxsize=1)
-def all_renders() -> frozenset[str]:
-    """Все возможные записи часов всех стилей: по ним в имени узнают наши часы."""
-    return frozenset(
-        style.render(hour, minute) for style in STYLES for hour in range(24) for minute in range(60)
+@lru_cache(maxsize=2)
+def _renders_of(number: int) -> frozenset[str]:
+    """Все 1440 записей одного стиля (малый кэш: обычно проверяется выбранный стиль)."""
+    style = get_style(number)
+    return frozenset(style.render(h, m) for h in range(24) for m in range(60))
+
+
+def is_clock_text(text: str, prefer: int | None = None) -> bool:
+    """True, если ``text`` это запись часов какого-либо стиля.
+
+    Сначала проверяется стиль ``prefer`` по маленькому кэшу. Остальные стили перебираются без
+    хранения: так не держим в памяти таблицу всех 30 тысяч записей ради редкой проверки.
+    """
+    if not text or len(text) > MAX_CLOCK_CHARS:
+        return False  # самая длинная запись короче: длинные суффиксы даже не перебираем
+    if prefer is not None and text in _renders_of(prefer):
+        return True
+    return any(
+        style.render(hour, minute) == text
+        for style in STYLES
+        if style.number != prefer
+        for hour in range(24)
+        for minute in range(60)
     )
 
 
-def strip_clock(name: str) -> str:
+def strip_clock(name: str, prefer: int | None = None) -> str:
     """Убирает с конца имени часы вида ``<имя> <запись часов>``; если их нет, возвращает имя как есть."""
-    renders = all_renders()
     # Запись может сама содержать пробелы (``| 12:34 |``), поэтому пробуем каждый пробел слева направо:
     # первый подходящий даёт самый длинный суффикс.
     for index, char in enumerate(name):
-        if char == " " and index > 0 and name[index + 1 :] in renders:
+        if char == " " and index > 0 and is_clock_text(name[index + 1 :], prefer):
             return name[:index]
     return name
 
 
-def is_ours(current: str, base: str) -> bool:
+def is_ours(current: str, base: str, prefer: int | None = None) -> bool:
     """True, если ``current`` это ``base`` либо ``base`` с нашими часами на конце."""
     if current == base:
         return True
     prefix = base + " "
-    return current.startswith(prefix) and current[len(prefix) :] in all_renders()
+    return current.startswith(prefix) and is_clock_text(current[len(prefix) :], prefer)
 
 
 # ---------------------------------------------------------------- часовой пояс

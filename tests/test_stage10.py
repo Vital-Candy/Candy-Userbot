@@ -13,12 +13,13 @@ from modules.storage.labels import LabelsModule
 from modules.system.accounts import AccountsModule
 from modules.system.backup import BackupModule
 from modules.system.plugins import PluginsModule
+from modules.system.restart import RestartModule
 from modules.system.status import StatusModule
 from modules.system.update import UpdateModule
 
 EXPECTED = {
     "help", "stop", "status", "account", "backup", "plugin", "update", "perm",
-    "label", "labels", "goto", "unlabel",
+    "label", "labels", "goto", "unlabel", "restart",
 }
 # В ответах Telegram включён Markdown: эти символы сломали бы или исказили справку.
 MARKDOWN = re.compile(r"[*`]|~~|__|\]\(")
@@ -31,7 +32,7 @@ async def build() -> tuple[Dispatcher, list[str]]:
     register_commands(dispatcher, AsyncMock())
     for module in (
         StatusModule, AccountsModule, BackupModule, PluginsModule, UpdateModule,
-        PermissionsModule, LabelsModule,
+        RestartModule, PermissionsModule, LabelsModule,
     ):
         await module(app).start()
     return dispatcher, []
@@ -125,6 +126,41 @@ class StatusCommandTests(unittest.IsolatedAsyncioTestCase):
         dispatcher, _ = await build()
         self.assertNotIn("health", dispatcher.commands)
         self.assertIn("Использование: .status [all]", await ask(dispatcher, ".status foo"))
+
+
+class RestartAndMemoryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_restart_answers_and_requests_restart(self):
+        app = SimpleNamespace(dispatcher=Dispatcher(), access=None, request_restart=AsyncMock())
+        module = RestartModule(app)
+        await module.start()
+        self.assertFalse(module.required)
+        self.assertIn("Перезапускаюсь", await ask(app.dispatcher, ".restart"))
+        app.request_restart.assert_awaited_once()
+
+    async def test_restart_with_arguments_only_shows_usage(self):
+        app = SimpleNamespace(dispatcher=Dispatcher(), access=None, request_restart=AsyncMock())
+        await RestartModule(app).start()
+        self.assertIn("Использование", await ask(app.dispatcher, ".restart now"))
+        app.request_restart.assert_not_awaited()
+
+    async def test_memory_usage_is_a_positive_number_or_none(self):
+        from core.health import memory_usage_mb
+
+        value = memory_usage_mb()
+        self.assertTrue(value is None or value > 1)
+
+    async def test_status_shows_memory_line_when_available(self):
+        from unittest.mock import patch
+
+        report = SimpleNamespace(lines=lambda: ["a", "b", "c", "• проблема"])
+        app = SimpleNamespace(dispatcher=Dispatcher(), access=None, health=lambda: report)
+        await StatusModule(app).start()
+        with patch("modules.system.status.memory_usage_mb", return_value=23.6):
+            text = await ask(app.dispatcher, ".status")
+        self.assertEqual(text.splitlines()[1:], ["a", "b", "c", "Память: 24 МБ", "• проблема"])
+        with patch("modules.system.status.memory_usage_mb", return_value=None):
+            self.assertNotIn("Память", await ask(app.dispatcher, ".status"))
+
 
 
 if __name__ == "__main__":

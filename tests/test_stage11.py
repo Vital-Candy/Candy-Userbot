@@ -157,6 +157,10 @@ class StyleTests(unittest.TestCase):
         for style in styles.STYLES:
             self.assertLessEqual(styles.max_length(style.number), 12)
 
+    def test_max_clock_chars_really_is_the_maximum(self):
+        longest = max(len(s.render(h, m)) for s in styles.STYLES for h in range(24) for m in range(60))
+        self.assertLessEqual(longest, styles.MAX_CLOCK_CHARS)
+
     def test_get_style_rejects_bad_numbers(self):
         for bad in (0, styles.STYLE_COUNT + 1, -1):
             with self.assertRaises(ValueError):

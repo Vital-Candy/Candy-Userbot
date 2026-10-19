@@ -260,12 +260,12 @@ class ClockService:
         field = self.state["field"]
         saved = self.state["base"]
         current = last if field == "last_name" else first
-        if self.state["applied"] and saved and is_ours(current, saved):
+        if self.state["applied"] and saved and is_ours(current, saved, self.style):
             return field, saved
-        stripped_last = strip_clock(last)
+        stripped_last = strip_clock(last, self.style)
         if stripped_last:
             return "last_name", stripped_last
-        return "first_name", strip_clock(first)
+        return "first_name", strip_clock(first, self.style)
 
     @staticmethod
     def _describe(exc: BaseException) -> str:
@@ -301,13 +301,13 @@ class ClockService:
         first, last = await self.backend.get_names()
         field, base = self.state["field"], self.state["base"]
         current = last if field == "last_name" else first
-        if current == self._last_name or is_ours(current, base):
+        if current == self._last_name or is_ours(current, base, self.style):
             return
         if field == "last_name" and not current:
             # Фамилию удалили: часы переезжают в имя.
-            field, new_base = "first_name", strip_clock(first)
+            field, new_base = "first_name", strip_clock(first, self.style)
         else:
-            new_base = strip_clock(current) or current
+            new_base = strip_clock(current, self.style) or current
         logger.info("Имя изменено вручную, новая основа для часов: %r.", new_base)
         self.state.update(field=field, base=new_base)
         self._save()
@@ -321,7 +321,7 @@ class ClockService:
         try:
             first, last = await asyncio.wait_for(self.backend.get_names(), RESTORE_TIMEOUT)
             current = last if field == "last_name" else first
-            if current != base and is_ours(current, base):
+            if current != base and is_ours(current, base, self.style):
                 await asyncio.wait_for(self.backend.set_field(field, base), RESTORE_TIMEOUT)
             elif current != base:
                 logger.info("Имя изменено вручную, часы не трогаю.")

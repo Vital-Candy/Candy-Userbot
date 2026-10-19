@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+from core.health import memory_usage_mb
 from core.module import Module
 from core.reply import answer
 from core.summary import module_lines, task_lines
@@ -11,7 +12,7 @@ from core.summary import module_lines, task_lines
 USAGE = "Использование: .status [all]"
 
 DETAILS = """\
-Показывает, всё ли в порядке: общее состояние (ok, degraded, down), связь с Telegram, базу, число модулей, плагинов и фоновых задач, а при проблемах их список.
+Показывает, всё ли в порядке: общее состояние (ok, degraded, down), связь с Telegram, базу, число модулей, плагинов и фоновых задач, занятую память, а при проблемах их список.
 
 .status — короткая сводка
 .status all — то же и подробно: каждый модуль (обязательный или нет, причина сбоя) и каждая фоновая задача (запуски, сбои, последняя ошибка)
@@ -48,7 +49,12 @@ class StatusModule(Module):
         if args not in ([], ["all"]):
             await answer(event, USAGE)
             return
-        text = "🍬 Candy Userbot\n" + "\n".join(self.app.health().lines())
+        lines = self.app.health().lines()
+        memory = memory_usage_mb()
+        if memory is not None:
+            # Строка памяти идёт после счётчиков, перед списком проблем.
+            lines.insert(3, f"Память: {memory:.0f} МБ")
+        text = "🍬 Candy Userbot\n" + "\n".join(lines)
         if args == ["all"]:
             text += "\n\n" + self.details_text()
         await answer(event, text)

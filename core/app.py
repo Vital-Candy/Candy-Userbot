@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from telethon import TelegramClient
 
@@ -39,13 +40,15 @@ from core.lifecycle import FAILED, RUNNING, STARTING, STOPPED, STOPPING, Lifecyc
 from core.modules import ModuleManager
 from core.plugins import PluginManager
 from core.shutdown import ShutdownSequence
-from core.updater import UpdateInfo, UpdateResult, Updater
 from core.summary import failed_summary
 from core.commands import register_commands
 from modules.system.loader import register_system_modules
 from storage.service import Storage
 from utils.logger import logger
 from utils.prompt import ask
+
+if TYPE_CHECKING:  # updater тянет urllib и zipfile (около 4 МБ ОЗУ): грузим только при обновлении
+    from core.updater import UpdateInfo, UpdateResult, Updater
 
 
 # Сколько секунд ждём отправки уведомления владельцу, прежде чем отказаться от него.
@@ -77,7 +80,8 @@ class UserbotApp:
             command_timeout=COMMAND_TIMEOUT,
         )
         self.events: EventBridge | None = None
-        self.background = BackgroundManager()
+        self.background = BackgroundManager(on_failing=self._task_failing)
+        self._notify_tasks: set[asyncio.Task] = set()  # ссылки, чтобы уведомления не собрал сборщик мусора
         self.identity: IdentityService | None = None
         self.access: AccessService | None = None
         self.storage = Storage(DATABASE_PATH)
@@ -147,6 +151,8 @@ class UserbotApp:
 
     def _updater(self) -> Updater:
         """Свежий ``Updater`` с текущими настройками репозитория и ветки."""
+        from core.updater import Updater
+
         return Updater(BASE_DIR, DATA_DIR, repo=UPDATE_REPO, branch=UPDATE_BRANCH)
 
     async def check_update(self) -> UpdateInfo:
@@ -254,6 +260,18 @@ class UserbotApp:
         summary = failed_summary(self)
         if summary:
             await self.notify_owner(summary)
+
+    def _task_failing(self, item) -> None:
+        """Фоновая задача стала сбоить: шлёт владельцу короткое уведомление (в фоне, без ожидания)."""
+        if self.client is None or not self.lifecycle.is_running:
+            return
+        text = (
+            f"⚠️ Фоновая задача {item.name} сбоит ({item.consecutive_failures} раз подряд): "
+            f"{item.last_error}\nПодробности: .status all"
+        )
+        task = asyncio.get_running_loop().create_task(self.notify_owner(text))
+        self._notify_tasks.add(task)
+        task.add_done_callback(self._notify_tasks.discard)
 
     async def notify_owner(self, text: str) -> bool:
         """Присылает владельцу сообщение в «Избранное». Никогда не бросает исключений."""

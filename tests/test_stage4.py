@@ -31,6 +31,50 @@ except ImportError:  # Telethon не установлен
 # ------------------------------------------------------------- фоновые задачи
 
 
+class BackgroundFailingHookTests(unittest.IsolatedAsyncioTestCase):
+    """Хук ``on_failing``: один раз за серию сбоев, не ломает задачу."""
+
+    async def run_failing(self, hook, *, threshold=3, recover_after=None, pause=0.15):
+        calls = {"n": 0}
+
+        async def flaky():
+            calls["n"] += 1
+            if recover_after is None or calls["n"] <= recover_after or calls["n"] > recover_after + 1:
+                raise ValueError("сбой")
+
+        manager = BackgroundManager(failure_threshold=threshold, on_failing=hook, max_backoff=0.01)
+        item = manager.register("f", flaky, interval=0.005)
+        with self.assertLogs("candy", level="DEBUG"):
+            await manager.start("f")
+            await asyncio.sleep(pause)
+            await manager.stop("f")
+        return item
+
+    async def test_called_once_when_threshold_reached(self):
+        seen: list[tuple[str, int]] = []
+        item = await self.run_failing(lambda task: seen.append((task.name, task.consecutive_failures)))
+        self.assertGreater(item.consecutive_failures, 3)
+        self.assertEqual(seen, [("f", 3)])
+
+    async def test_called_again_after_recovery_and_new_streak(self):
+        seen: list[int] = []
+        # 3 сбоя, один успех, затем снова сбои: две серии.
+        await self.run_failing(lambda task: seen.append(task.consecutive_failures), recover_after=3)
+        self.assertEqual(seen, [3, 3])
+
+    async def test_threshold_one_reports_on_first_failure(self):
+        seen: list[int] = []
+        await self.run_failing(lambda task: seen.append(task.consecutive_failures), threshold=1)
+        self.assertEqual(seen, [1])
+
+    async def test_broken_hook_does_not_stop_the_task(self):
+        def hook(_task):
+            raise RuntimeError("хук сломан")
+
+        item = await self.run_failing(hook)
+        self.assertGreater(item.failures, 5)  # задача продолжила работать
+
+
 class BackgroundStateTests(unittest.IsolatedAsyncioTestCase):
     async def test_status_follows_lifecycle(self):
         manager = BackgroundManager()

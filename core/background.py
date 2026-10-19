@@ -71,8 +71,12 @@ class BackgroundManager:
         *,
         failure_threshold: int = FAILURE_THRESHOLD,
         max_backoff: float = MAX_BACKOFF,
+        on_failing: Callable[[BackgroundTask], None] | None = None,
     ) -> None:
+        """``on_failing(задача)`` вызывается один раз за серию, когда сбоев подряд набралось
+        ``failure_threshold`` (например, чтобы сообщить владельцу). Её ошибки не мешают задаче."""
         self._tasks: dict[str, BackgroundTask] = {}
+        self.on_failing = on_failing
         self.failure_threshold = max(1, failure_threshold)
         self.max_backoff = max_backoff
 
@@ -209,6 +213,15 @@ class BackgroundManager:
         item.consecutive_failures = 0
         item.last_success = _now()
 
+    def _report_failing(self, item: BackgroundTask) -> None:
+        """Сообщает наружу, что задача сбоит; любая ошибка обратного вызова только пишется в лог."""
+        if self.on_failing is None:
+            return
+        try:
+            self.on_failing(item)
+        except Exception:
+            logger.exception("Ошибка обратного вызова on_failing для задачи '%s'.", item.name)
+
     def _on_failure(self, item: BackgroundTask, exc: Exception) -> None:
         item.failures += 1
         item.consecutive_failures += 1
@@ -219,6 +232,8 @@ class BackgroundManager:
         count = item.consecutive_failures
         if count == 1:
             logger.exception("Ошибка фоновой задачи '%s'.", item.name)
+            if self.failure_threshold == 1:
+                self._report_failing(item)
             return
         # Дальше без traceback и не на каждом сбое: степени двойки и порог.
         if count == self.failure_threshold:
@@ -228,6 +243,7 @@ class BackgroundManager:
                 count,
                 item.last_error,
             )
+            self._report_failing(item)
         elif count & (count - 1) == 0:
             logger.warning(
                 "Фоновая задача '%s' всё ещё падает (%d подряд): %s",

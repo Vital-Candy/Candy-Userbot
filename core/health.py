@@ -139,6 +139,18 @@ def build_health(app: Any) -> HealthReport:
     )
 
 
+def memory_usage_mb() -> float | None:
+    """Память процесса (RSS) в мегабайтах по /proc; ``None``, если система её не показывает."""
+    try:
+        with open("/proc/self/status", encoding="ascii", errors="replace") as handle:
+            for line in handle:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024  # значение в килобайтах
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
 def _short(text: str | None, limit: int = 100) -> str:
     text = (text or "").replace("\n", " ").strip()
     return text if len(text) <= limit else text[: limit - 1] + "…"

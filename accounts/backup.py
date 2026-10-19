@@ -8,7 +8,6 @@ import json
 import shutil
 import sqlite3
 import tempfile
-import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -57,6 +56,8 @@ class BackupManager:
             session_copy = Path(tmp) / SESSION_NAME
             self._snapshot_session(account.session_path, session_copy)
             try:
+                import zipfile  # лениво: модуль нужен только при создании и восстановлении backup
+
                 with zipfile.ZipFile(temp, "w", zipfile.ZIP_DEFLATED) as archive:
                     archive.write(account.profile_path, PROFILE_NAME)
                     archive.write(session_copy, SESSION_NAME)
@@ -159,6 +160,8 @@ class BackupManager:
 
         Проверяются пути (zip-slip), дубликаты, набор имён и размеры. Бросает ValueError.
         """
+        import zipfile  # лениво, см. create()
+
         root = destination.resolve()
         try:
             archive_file = zipfile.ZipFile(source)

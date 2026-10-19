@@ -1,6 +1,7 @@
 """Этап 2: команды .account и .backup, переключение аккаунта, консольные команды."""
 from __future__ import annotations
 
+import asyncio
 import io
 import contextlib
 import json
@@ -252,6 +253,28 @@ class AppSwitchTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(app.restart_requested)
             app.stop.assert_not_awaited()
             self.assertFalse((base / "accounts" / "active.json").exists())
+
+    async def test_failing_task_notifies_owner_only_while_running(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app = self.make_app(Path(tmp))
+            app.client = SimpleNamespace()
+            app.notify_owner = AsyncMock(return_value=True)
+            item = SimpleNamespace(name="sync", consecutive_failures=3, last_error="ValueError: boom")
+
+            app._task_failing(item)  # приложение ещё не работает: молчим
+            await asyncio.sleep(0)
+            app.notify_owner.assert_not_awaited()
+
+            app.lifecycle.move("starting")
+            app.lifecycle.move("running")
+            app._task_failing(item)
+            await asyncio.sleep(0)
+            app.notify_owner.assert_awaited_once()
+            text = app.notify_owner.await_args.args[0]
+            self.assertIn("sync", text)
+            self.assertIn("boom", text)
+            await asyncio.sleep(0)  # done-callback срабатывает на следующем шаге цикла
+            self.assertEqual(app._notify_tasks, set())  # завершённая задача убирается из набора
 
     async def test_cli_restore_makes_first_account_active(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -5,6 +5,7 @@ from modules.system.accounts import AccountsModule
 from modules.system.backup import BackupModule
 from modules.system.heartbeat import HeartbeatModule
 from modules.system.plugins import PluginsModule
+from modules.system.restart import RestartModule
 from modules.system.status import StatusModule
 from modules.system.update import UpdateModule
 from modules.clock.loader import register_clock_modules
@@ -20,6 +21,7 @@ def register_system_modules(app) -> None:
     app.modules.register(BackupModule(app))
     app.modules.register(PluginsModule(app))
     app.modules.register(UpdateModule(app))
+    app.modules.register(RestartModule(app))
     register_storage_modules(app)
     register_permission_modules(app)
     register_clock_modules(app)
