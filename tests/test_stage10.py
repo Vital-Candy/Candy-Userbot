@@ -10,6 +10,7 @@ from core.commands import find_command, help_command_text, help_list, register_c
 from core.dispatcher import Dispatcher
 from modules.permissions.module import PermissionsModule
 from modules.storage.labels import LabelsModule
+from modules.spam.module import SpamModule
 from modules.system.accounts import AccountsModule
 from modules.system.backup import BackupModule
 from modules.system.plugins import PluginsModule
@@ -19,7 +20,7 @@ from modules.system.update import UpdateModule
 
 EXPECTED = {
     "help", "stop", "status", "account", "backup", "plugin", "update", "perm",
-    "label", "labels", "goto", "unlabel", "restart",
+    "label", "labels", "goto", "unlabel", "restart", "spam",
 }
 # В ответах Telegram включён Markdown: эти символы сломали бы или исказили справку.
 MARKDOWN = re.compile(r"[*`]|~~|__|\]\(")
@@ -32,7 +33,7 @@ async def build() -> tuple[Dispatcher, list[str]]:
     register_commands(dispatcher, AsyncMock())
     for module in (
         StatusModule, AccountsModule, BackupModule, PluginsModule, UpdateModule,
-        RestartModule, PermissionsModule, LabelsModule,
+        RestartModule, SpamModule, PermissionsModule, LabelsModule,
     ):
         await module(app).start()
     return dispatcher, []
