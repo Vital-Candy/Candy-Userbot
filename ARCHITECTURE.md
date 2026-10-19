@@ -59,6 +59,7 @@ CandyUserbot/
 ├── modules/
 │   ├── system/           # status, heartbeat, accounts (.account), backup (.backup), plugins (.plugin), update (.update)
 │   ├── storage/          # .label, .labels, .goto, .unlabel
+│   ├── clock/            # .time: часы в имени (styles, service, module)
 │   └── permissions/
 ├── storage/              # database, models, labels, permissions, service, migrations/
 ├── plugins/              # только пользовательские плагины
