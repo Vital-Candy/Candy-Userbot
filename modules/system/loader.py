@@ -10,6 +10,7 @@ from modules.system.status import StatusModule
 from modules.system.update import UpdateModule
 from modules.clock.loader import register_clock_modules
 from modules.spam.loader import register_spam_modules
+from modules.utility.loader import register_utility_modules
 from modules.permissions.loader import register_permission_modules
 from modules.storage.loader import register_storage_modules
 
@@ -27,3 +28,4 @@ def register_system_modules(app) -> None:
     register_permission_modules(app)
     register_clock_modules(app)
     register_spam_modules(app)
+    register_utility_modules(app)
