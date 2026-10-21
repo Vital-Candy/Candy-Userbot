@@ -98,6 +98,17 @@ class PublishScriptTests(unittest.TestCase):
         self.assertIn("main.py", tracked)
         self.assertFalse([name for name in tracked if name.startswith("data/") or name == ".env"])
 
+    def test_running_install_is_refused_unless_forced(self) -> None:
+        session = self.src / "data" / "accounts" / "1" / "main.session"
+        session.parent.mkdir(parents=True)
+        session.write_bytes(b"x")
+        result = self.run_publish("--dry-run")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("рабочую установку", result.stdout + result.stderr)
+        self.assertFalse(self.work.exists())
+        forced = self.run_publish("--dry-run", extra_env={"PUBLISH_FROM_INSTALL": "1"})
+        self.assertEqual(forced.returncode, 0)
+
     def test_forbidden_word_blocks_publication(self) -> None:
         (self.src / "README.md").write_text("Автор: " + WORD.capitalize() + "\n", encoding="utf-8")
         result = self.run_publish("--dry-run")
