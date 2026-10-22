@@ -1,4 +1,4 @@
-"""Команды .user, .ping, .tag, .dd: форматирование, разбор аргументов, защита, отправка."""
+"""Команды .user, .ping, .tag: форматирование, разбор аргументов, защита, отправка."""
 from __future__ import annotations
 
 import asyncio
@@ -12,8 +12,6 @@ from unittest.mock import AsyncMock
 
 from core.dispatcher import Dispatcher
 from core.errors import UserError
-from modules.utility import dd as ddmod
-from modules.utility.dd import DDModule, copy_from_cache, downloads_dir, refusal_reason, unique_path
 from modules.utility.ping import PingModule, format_ping
 from modules.utility.tag import (
     MAX_ALL,
@@ -354,126 +352,6 @@ class TagCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_bad_arguments_show_usage(self):
         event = await self.run_command(".tag")
         self.assertIn("Использование", event.edits[-1])
-
-
-class DDHelperTests(unittest.TestCase):
-    def test_downloads_dir_priority(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            self.assertEqual(downloads_dir({}, home), ddmod.DATA_DIR / "downloads")
-            (home / "storage" / "downloads").mkdir(parents=True)
-            self.assertEqual(downloads_dir({}, home), home / "storage" / "downloads" / "Candy")
-            self.assertEqual(downloads_dir({"CANDY_DOWNLOADS_DIR": "/x/y"}, home), Path("/x/y"))
-            self.assertEqual(downloads_dir({"CANDY_DOWNLOADS_DIR": "  "}, home), home / "storage" / "downloads" / "Candy")
-
-    def test_unique_path_and_copy_removes_cache_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp)
-            cache, target = base / "cache", base / "dl"
-            cache.mkdir()
-            for _ in range(3):
-                (cache / "a.jpg").write_bytes(b"data")
-                saved = copy_from_cache(cache / "a.jpg", target)
-                self.assertTrue(saved.exists())
-                self.assertFalse((cache / "a.jpg").exists())
-            self.assertEqual(sorted(p.name for p in target.iterdir()), ["a (1).jpg", "a (2).jpg", "a.jpg"])
-            self.assertEqual(unique_path(target, "new.txt").name, "new.txt")
-
-    def test_refusals(self):
-        self.assertIn("нет медиа", refusal_reason(SimpleNamespace(media=None)))
-        self.assertIn("самоуничтожающ", refusal_reason(SimpleNamespace(media=SimpleNamespace(ttl_seconds=10))))
-        self.assertIn("защита", refusal_reason(SimpleNamespace(media=SimpleNamespace(ttl_seconds=None), noforwards=True)))
-        self.assertIn("защита", refusal_reason(
-            SimpleNamespace(media=SimpleNamespace(ttl_seconds=None), chat=SimpleNamespace(noforwards=True))))
-        self.assertIsNone(refusal_reason(SimpleNamespace(media=SimpleNamespace(ttl_seconds=None))))
-
-
-class DDCommandTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self.tmp.name)
-        self.cache, self.target = self.base / "cache", self.base / "dl"
-        self.sent_files: list = []
-
-        async def download_media(message, file):
-            Path(file).mkdir(parents=True, exist_ok=True)
-            path = Path(file) / "photo.jpg"
-            path.write_bytes(b"x")
-            return str(path)
-
-        async def send_file(chat_id, path):
-            self.sent_files.append((chat_id, path))
-
-        self.client = SimpleNamespace(download_media=download_media, send_file=send_file)
-        self.app = SimpleNamespace(dispatcher=Dispatcher(), client=self.client, notify_owner=AsyncMock())
-        self.module = DDModule(self.app)
-        self.module._cache = lambda: self.cache
-        self.module._downloads = lambda: self.target
-        await self.module.start()
-
-    async def asyncTearDown(self):
-        await self.module.stop()
-        self.tmp.cleanup()
-
-    async def run_command(self, text, reply):
-        event = make_event(text, get_reply_message=AsyncMock(return_value=reply))
-        await self.app.dispatcher.dispatch_command(event)
-        for task in list(self.module._tasks):
-            await task
-        return event
-
-    def media_message(self, **media_attrs):
-        return SimpleNamespace(media=SimpleNamespace(ttl_seconds=None, **media_attrs))
-
-    async def test_saves_via_cache_and_deletes_command(self):
-        event = await self.run_command(".dd", self.media_message())
-        event.delete.assert_awaited_once()
-        self.assertTrue((self.target / "photo.jpg").exists())
-        self.assertEqual(list(self.cache.iterdir()), [])  # кэш очищен после копирования
-        self.assertEqual(self.sent_files, [])
-        self.assertIn("сохранено", self.app.notify_owner.await_args.args[0])
-        self.assertEqual(event.edits, [])  # в чате никаких следов
-
-    async def test_flag_c_also_sends_to_chat(self):
-        await self.run_command(".dd -c", self.media_message())
-        self.assertEqual(self.sent_files, [(100, str(self.target / "photo.jpg"))])
-        self.assertIn("отправлено в чат", self.app.notify_owner.await_args.args[0])
-
-    async def test_self_destructing_media_is_not_saved(self):
-        reply = SimpleNamespace(media=SimpleNamespace(ttl_seconds=5))
-        await self.run_command(".dd", reply)
-        self.assertFalse(self.target.exists())
-        self.assertIn("самоуничтожающ", self.app.notify_owner.await_args.args[0])
-
-    async def test_protected_chat_is_not_saved(self):
-        reply = SimpleNamespace(media=SimpleNamespace(ttl_seconds=None), noforwards=True)
-        await self.run_command(".dd -c", reply)
-        self.assertEqual(self.sent_files, [])
-        self.assertIn("защита", self.app.notify_owner.await_args.args[0])
-
-    async def test_without_reply_or_with_bad_flag_shows_usage(self):
-        event = await self.run_command(".dd", None)
-        self.assertIn("Использование", event.edits[-1])
-        event.delete.assert_not_awaited()
-        event = await self.run_command(".dd -x", self.media_message())
-        self.assertIn("Использование", event.edits[-1])
-
-    async def test_download_failure_is_reported_to_owner(self):
-        async def broken(message, file):
-            raise RuntimeError("сеть")
-
-        self.client.download_media = broken
-        with self.assertLogs("candy", level="ERROR"):
-            await self.run_command(".dd", self.media_message())
-        self.assertIn("сеть", self.app.notify_owner.await_args.args[0])
-
-    async def test_empty_download_result_is_reported(self):
-        async def nothing(message, file):
-            return None
-
-        self.client.download_media = nothing
-        await self.run_command(".dd", self.media_message())
-        self.assertIn("не отдал файл", self.app.notify_owner.await_args.args[0])
 
 
 if __name__ == "__main__":

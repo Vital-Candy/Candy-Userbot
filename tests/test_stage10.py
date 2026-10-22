@@ -12,7 +12,6 @@ from modules.permissions.module import PermissionsModule
 from modules.storage.labels import LabelsModule
 from modules.spam.module import SpamModule
 from modules.system.accounts import AccountsModule
-from modules.utility.dd import DDModule
 from modules.utility.ping import PingModule
 from modules.utility.tag import TagModule
 from modules.utility.user import UserModule
@@ -25,7 +24,7 @@ from modules.system.update import UpdateModule
 EXPECTED = {
     "help", "stop", "status", "account", "backup", "plugin", "update", "perm",
     "label", "labels", "goto", "unlabel", "restart", "spam",
-    "user", "ping", "tag", "dd",
+    "user", "ping", "tag",
 }
 # В ответах Telegram включён Markdown: эти символы сломали бы или исказили справку.
 MARKDOWN = re.compile(r"[*`]|~~|__|\]\(")
@@ -38,7 +37,7 @@ async def build() -> tuple[Dispatcher, list[str]]:
     register_commands(dispatcher, AsyncMock())
     for module in (
         StatusModule, AccountsModule, BackupModule, PluginsModule, UpdateModule,
-        RestartModule, SpamModule, UserModule, PingModule, TagModule, DDModule, PermissionsModule, LabelsModule,
+        RestartModule, SpamModule, UserModule, PingModule, TagModule, PermissionsModule, LabelsModule,
     ):
         await module(app).start()
     return dispatcher, []
