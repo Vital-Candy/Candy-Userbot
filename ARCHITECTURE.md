@@ -57,11 +57,11 @@ CandyUserbot/
 │   └── errors.py
 ├── accounts/             # account, manager, auth, backup, migration, control (этап 2)
 ├── modules/
-│   ├── system/           # status, heartbeat, accounts (.account), backup (.backup), plugins (.plugin), update (.update), restart (.restart)
+│   ├── system/           # status, heartbeat, accounts (.account), backup (.backup), plugins (.plugin), update (.update), restart (.restart), prefix (.setprefix)
 │   ├── storage/          # .label, .labels, .goto, .unlabel
 │   ├── clock/            # .time: часы в имени (styles, service, module)
 │   ├── spam/             # .spam: повтор сообщения с паузой (parser, module)
-│   ├── utility/          # .user, .ping, .tag (text, user, ping, tag)
+│   ├── utility/          # .user, .ping, .tag, .purge (text, user, ping, tag, purge)
 │   └── permissions/
 ├── storage/              # database, models, labels, permissions, service, migrations/
 ├── plugins/              # только пользовательские плагины

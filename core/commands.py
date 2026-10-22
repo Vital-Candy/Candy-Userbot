@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import difflib
+import re
 
 from core.dispatcher import Command, Dispatcher
 from core.reply import answer
@@ -27,17 +28,31 @@ STOP_DETAILS = """\
 Права: только владелец аккаунта."""
 
 
-def help_list(commands: list[Command]) -> str:
+def with_prefix(text: str, prefix: str, names) -> str:
+    """Заменяет точку перед именами известных команд на текущий префикс (если он не точка)."""
+    names = sorted((re.escape(name) for name in names), key=len, reverse=True)
+    if prefix == "." or not names:
+        return text
+    pattern = re.compile(r"(?<![\w.])\.(" + "|".join(names) + r")\b")
+    return pattern.sub(lambda match: prefix + match.group(1), text)
+
+
+def help_list(commands: list[Command], prefix: str = ".") -> str:
     """Короткий список команд: по строке «.имя — действие» и подсказка про подробную справку."""
     lines = ["🍬 Candy Userbot: команды", ""]
     for command in commands:
         lines.append(f".{command.name} — {command.description or 'без описания'}")
     lines += ["", "Подробнее: .help <команда>, например .help label"]
-    return "\n".join(lines)
+    return with_prefix("\n".join(lines), prefix, [command.name for command in commands])
 
 
-def help_command_text(command: Command) -> str:
+def help_command_text(command: Command, prefix: str = ".", names=()) -> str:
     """Полная справка по одной команде: заголовок, использование и подробное описание."""
+    return with_prefix(_command_text(command), prefix, set(names) | {command.name})
+
+
+def _command_text(command: Command) -> str:
+    """Справка по команде с точкой в качестве префикса."""
     lines = [f"📖 .{command.name} — {command.description or 'без описания'}"]
     lines.append(f"Использование: {command.usage or '.' + command.name}")
     if command.details:
@@ -47,9 +62,9 @@ def help_command_text(command: Command) -> str:
     return "\n".join(lines)
 
 
-def find_command(commands: list[Command], word: str) -> Command | None:
-    """Команда по имени из запроса: без учёта регистра и с точкой или без неё."""
-    name = word.strip().lower().lstrip(".")
+def find_command(commands: list[Command], word: str, prefix: str = ".") -> Command | None:
+    """Команда по имени из запроса: без учёта регистра и с префиксом или без него."""
+    name = word.strip().lower().lstrip(".").lstrip(prefix)
     return next((command for command in commands if command.name == name), None)
 
 
@@ -62,20 +77,22 @@ def register_commands(dispatcher: Dispatcher, stop_callback) -> None:
     async def help_command(event) -> None:
         """``.help`` показывает список, ``.help <команда>`` показывает полное описание."""
         commands = dispatcher.command_help()
+        prefix = dispatcher.parser.prefix
+        names = [item.name for item in commands]
         parsed = dispatcher.get_command(event)
         args = list(parsed.args) if parsed else []
         if not args:
-            await answer(event, help_list(commands))
+            await answer(event, help_list(commands, prefix))
             return
         if len(args) > 1:
             await answer(event, "Использование: .help [команда]")
             return
-        command = find_command(commands, args[0])
+        command = find_command(commands, args[0], prefix)
         if command is not None:
-            await answer(event, help_command_text(command))
+            await answer(event, help_command_text(command, prefix, names))
             return
         # Опечатку подсказываем: при похожем имени пользователь исправится сразу.
-        name = args[0].strip().lower().lstrip(".")
+        name = args[0].strip().lower().lstrip(".").lstrip(prefix)
         close = difflib.get_close_matches(name, [item.name for item in commands], n=3, cutoff=0.6)
         hint = ("Похожие: " + ", ".join("." + item for item in close) + ". ") if close else ""
         await answer(event, f"❌ Команды .{name} нет. {hint}Список: .help")
